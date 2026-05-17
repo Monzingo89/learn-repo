@@ -1,6 +1,64 @@
+import path from "path";
+import { Command } from "commander";
 import { learn } from "../workflows/learn.workflow.js";
 
-learn(process.cwd()).catch((error) => {
-  console.error(error);
+type CliOptions = {
+  path?: string;
+  maxFileBytes: string;
+  includeExt?: string;
+  excludeDir?: string;
+  quiet?: boolean;
+  verbose?: boolean;
+  jsonSummary?: boolean;
+};
+
+function parseCsv(value?: string): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+const program = new Command();
+
+program
+  .name("engineer-maxxing")
+  .description("Scan a repository and update Cortex memory files with realtime token usage and technology docs context.")
+  .argument("[repoPath]", "Path to the repository root (default: current working directory)")
+  .option("--path <repoPath>", "Explicit repository path (overrides positional repoPath)")
+  .option("--max-file-bytes <bytes>", "Maximum bytes from each file sent to prompts", "20000")
+  .option("--include-ext <extensions>", "Additional file extensions to include, comma-separated (example: .toml,.env)")
+  .option("--exclude-dir <directories>", "Additional directory names to exclude, comma-separated")
+  .option("--quiet", "Suppress per-file progress output")
+  .option("--verbose", "Print verbose per-file token usage output")
+  .option("--json-summary", "Print final run summary as JSON")
+  .action(async (repoPath: string | undefined, options: CliOptions) => {
+    const repoRootInput = options.path || repoPath || process.cwd();
+    const repoRoot = path.resolve(process.cwd(), repoRootInput);
+
+    const maxFileBytes = Number.parseInt(options.maxFileBytes, 10);
+
+    if (!Number.isFinite(maxFileBytes) || maxFileBytes <= 0) {
+      throw new Error(`Invalid --max-file-bytes value: ${options.maxFileBytes}`);
+    }
+
+    const quiet = Boolean((options.quiet && !options.verbose) || (options.jsonSummary && !options.verbose));
+
+    const summary = await learn(repoRoot, {
+      maxFileBytes,
+      includeExt: parseCsv(options.includeExt),
+      excludeDirs: parseCsv(options.excludeDir),
+      quiet,
+      verbose: Boolean(options.verbose)
+    });
+
+    if (options.jsonSummary) {
+      process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    }
+  });
+
+program.parseAsync(process.argv).catch((error) => {
+  console.error(error instanceof Error ? error.message : error);
   process.exit(1);
 });

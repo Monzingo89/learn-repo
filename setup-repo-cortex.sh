@@ -996,6 +996,20 @@ Empty until learned.
 
 Empty until learned.
 
+## Architecture Layers (High Level)
+
+- Frontend code makeup: Empty until learned.
+- Frontend to backend interactions: Empty until learned.
+- Backend code: Empty until learned.
+- Backend to database interactions: Empty until learned.
+- Caching layer: Empty until learned.
+- SignalR / Realtime layer: Empty until learned.
+
+## Data Layer Posture
+
+- Database technology: Database-agnostic until concrete database usage is detected.
+- Database connection summary: Empty until learned.
+
 ## Tech Stack
 
 Empty until learned.

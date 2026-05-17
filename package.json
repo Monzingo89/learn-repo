@@ -1,10 +1,10 @@
 {
-  "name": "@monzingo89/learn-repo",
+  "name": "@monzingo89/engineer-maxxing",
   "version": "1.0.0",
   "description": "Code-agnostic observable repo memory system.",
   "type": "module",
   "bin": {
-    "learn-repo": "dist/cortex/cli/learn.js"
+    "engineer-maxxing": "dist/cortex/cli/learn.js"
   },
   "publishConfig": {
     "access": "public"
@@ -14,7 +14,11 @@
     "dev": "tsx cortex/cli/learn.ts",
     "start": "node dist/cortex/cli/learn.js",
     "lint": "tsc --noEmit",
-    "verify:publish": "npm run lint && npm run build && npm pack --dry-run",
+    "test:dist": "node --test dist/cortex/tests/*.test.js",
+    "test": "npm run build && npm run test:dist",
+    "verify:publish": "npm run lint && npm run build && npm run test:dist && npm pack --dry-run",
+    "release:patch": "npm version patch && npm run verify:publish",
+    "release:minor": "npm version minor && npm run verify:publish",
     "prepublishOnly": "npm run verify:publish"
   },
   "dependencies": {

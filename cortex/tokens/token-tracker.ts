@@ -12,13 +12,16 @@ export type TokenRecord = {
 
 export type TokenLedger = Partial<Record<ModelId, TokenRecord>>;
 
-const tokenPath = path.join(process.cwd(), ".cortex", "token-usage.json");
+function getTokenPath() {
+  return path.join(process.cwd(), ".cortex", "token-usage.json");
+}
 
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
 export function readTokenLedger(): TokenLedger {
+  const tokenPath = getTokenPath();
   if (!fs.existsSync(tokenPath)) return {};
   return JSON.parse(fs.readFileSync(tokenPath, "utf8") || "{}");
 }
@@ -28,6 +31,7 @@ export function recordTokenUsage(
   inputText: string,
   outputText: string
 ): TokenRecord {
+  const tokenPath = getTokenPath();
   const ledger = readTokenLedger();
 
   const inputTokens = estimateTokens(inputText);

@@ -98,6 +98,30 @@ class GlobalContextStore {
       }
     });
   }
+
+  updateLearned(input: Partial<RepoBrainState["learned"]>) {
+    const state = this.get();
+    const nextLearned = {
+      ...state.learned,
+      ...input
+    };
+
+    const learnedKeys = Object.keys(nextLearned) as Array<keyof RepoBrainState["learned"]>;
+
+    for (const key of learnedKeys) {
+      const currentValue = state.learned[key];
+      const incomingValue = nextLearned[key];
+
+      if (Array.isArray(currentValue) && Array.isArray(incomingValue)) {
+        nextLearned[key] = Array.from(new Set([...currentValue, ...incomingValue])) as never;
+      }
+    }
+
+    this.set({
+      ...state,
+      learned: nextLearned
+    });
+  }
 }
 
 export const GlobalContext = new GlobalContextStore();
