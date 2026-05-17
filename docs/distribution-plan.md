@@ -19,7 +19,7 @@ This document describes how `@monzingo89/engineer-maxxing` is distributed and ve
 ### GitHub Releases (secondary)
 
 - Repository: `https://github.com/Monzingo89/engineer-maxxing`
-- Semver tags (e.g., `v1.0.2`) are used for release tracking.
+- Semver tags (e.g., `v1.0.3`) are used for release tracking.
 - Release notes summarize feature additions, fixes, and migration notes.
 
 ## Release Cadence
