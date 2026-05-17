@@ -12,6 +12,17 @@
 - DOC_CONTEXT: Fetched from official technology documentation.
 - RISK: Needs attention.
 
+## MODEL_ACTION_GUARDRAILS
+
+- Ask questions first before any prompt/action when executing work.
+- For any **new feature**, always run a **plan phase first** before implementation.
+- Do not over-complicate solutions. Prefer the simplest implementation that satisfies requirements.
+- Use the least amount of tokens possible: avoid repeated scans, keep context concise, summarize aggressively.
+- Follow industry standards for each technology by using official/vendor documentation as the primary source of truth.
+- Do not hallucinate. Do not invent facts, files, code paths, APIs, or behaviors.
+- Do not assume missing requirements. Mark unknowns and ask clarifying questions.
+- If confidence is low, stop and ask before proceeding.
+
 ---
 
 # DEFAULT_KNOWLEDGE

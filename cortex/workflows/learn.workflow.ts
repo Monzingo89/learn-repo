@@ -53,6 +53,7 @@ import {
   analyzeFileForDependencyUsage,
   buildDependencyAudit,
   buildSoulMarkdown,
+  collectThirdPartyDocs,
   createDependencyUsageAccumulator
 } from "./dependency-audit.js";
 import {
@@ -63,6 +64,11 @@ import {
 } from "./architecture-patterns.js";
 import { inferBackendProtocols } from "./heart-plan.js";
 import { BackendProtocol } from "../enums/backend-protocol.enum.js";
+import {
+  analyzeFileForSecretHygiene,
+  createSecretHygieneAccumulator,
+  finalizeSecretHygiene
+} from "./secret-hygiene.js";
 
 const DEFAULT_IGNORE_DIRS = new Set([
   "node_modules",
@@ -372,6 +378,7 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
   const dependencyUsage = createDependencyUsageAccumulator();
   const architecturePatterns = createArchitecturePatternAccumulator();
   const backendProtocolSet = new Set<BackendProtocol>();
+  const secretHygiene = createSecretHygieneAccumulator();
 
   let skippingForResume = Boolean(resumeFromFile);
 
@@ -465,6 +472,7 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
     analyzeFileForDeadCode(relativePath, content, deadCodeAccumulator);
     analyzeFileForDependencyUsage(relativePath, content, dependencyUsage);
     analyzeFileForArchitecturePatterns(relativePath, content, architecturePatterns);
+    analyzeFileForSecretHygiene(relativePath, content, secretHygiene);
     for (const protocol of inferBackendProtocols(content)) backendProtocolSet.add(protocol);
 
     if (options.verbose && architectureDelta.newlyDetectedDatabaseTechnologies.length > 0) {
@@ -676,6 +684,22 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
   appendOrganEvent(symbolEvent);
 
   const dependencyAudit = buildDependencyAudit(repoRoot, dependencyUsage);
+  const secretFindings = finalizeSecretHygiene(secretHygiene);
+
+  if (secretFindings.length > 0) {
+    const secretEvent = createRepoEvent({
+      type: RepoEventType.SECRET_EXPOSURE_DETECTED,
+      targetFile: RepoMemoryFile.NOSE,
+      title: `${secretFindings.length} possible secret exposure signal(s)`,
+      summary: "Potential committed secrets were detected. Review immediately and rotate exposed credentials.",
+      evidence: secretFindings.slice(0, 30).map((item) => `${item.filePath}: ${item.kind}`),
+      severity: "high",
+      confidence: "medium"
+    });
+
+    GlobalContext.pushEvent(secretEvent);
+    appendOrganEvent(secretEvent);
+  }
 
   if (dependencyAudit) {
     GlobalContext.setDependencyAudit(dependencyAudit);
@@ -685,7 +709,19 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
       docsUrl: tech.docsUrl
     }));
 
-    const soulMarkdown = buildSoulMarkdown(dependencyAudit, technologyDocs);
+    const thirdPartyDocs = collectThirdPartyDocs(dependencyAudit);
+
+    const soulMarkdown = buildSoulMarkdown(
+      dependencyAudit,
+      technologyDocs,
+      thirdPartyDocs,
+      {
+        findings: secretFindings.map((item) => ({
+          filePath: item.filePath,
+          kind: item.kind
+        }))
+      }
+    );
     writeAnatomyFile(RepoMemoryFile.SOUL, soulMarkdown);
 
     const dependencyEvent = createRepoEvent({

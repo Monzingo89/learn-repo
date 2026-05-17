@@ -20,7 +20,7 @@ export function buildHeartMarkdown(input: HeartInput): string {
   lines.push("# HEART — Feature Work Plan");
   lines.push("");
   lines.push(
-    "HEART captures how new functionality should be added across four axes. Use this scaffold for every feature, refactor, or simplification proposed during CLEAN_REPO and SIMPLIFY_REPO phases."
+    "HEART captures how new functionality should be added across visual, frontend, backend, database, and infrastructure axes. Use this scaffold for every feature, refactor, or simplification proposed during CLEAN_REPO and SIMPLIFY_REPO phases."
   );
   lines.push("");
 
@@ -37,6 +37,15 @@ export function buildHeartMarkdown(input: HeartInput): string {
     lines.push("- Acceptance criteria: _to be populated_");
     lines.push("");
   }
+
+  lines.push("## DATABASE changes");
+  lines.push(
+    "> Schema, migrations, indexes, query performance, connection/security posture, and data integrity constraints."
+  );
+  lines.push("");
+  lines.push("- Planned items: _to be populated during CLEAN_REPO / SIMPLIFY_REPO_");
+  lines.push("- Acceptance criteria: _to be populated_");
+  lines.push("");
 
   lines.push("## Current observations to seed the plan");
   lines.push("");

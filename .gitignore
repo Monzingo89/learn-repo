@@ -7,8 +7,6 @@ dist/
 
 # Local runtime/state
 .cortex/
-anatomy/
-
 # OS/editor
 .DS_Store
 .vscode/

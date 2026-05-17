@@ -40,6 +40,17 @@ export type DependencyUsageAccumulator = {
   byPackage: Map<string, Set<string>>;
 };
 
+export type ThirdPartyDocLink = {
+  packageName: string;
+  docsUrl: string;
+  category: DependencyHealthEntry["category"];
+  used: boolean;
+};
+
+export type SecretHygieneSummary = {
+  findings: Array<{ filePath: string; kind: string }>;
+};
+
 export function createDependencyUsageAccumulator(): DependencyUsageAccumulator {
   return { byPackage: new Map() };
 }
@@ -138,7 +149,9 @@ export function buildDependencyAudit(
 
 export function buildSoulMarkdown(
   audit: DependencyAuditFindings,
-  technologyDocs: Array<{ name: string; docsUrl: string }>
+  technologyDocs: Array<{ name: string; docsUrl: string }>,
+  thirdPartyDocs: ThirdPartyDocLink[],
+  secretHygiene: SecretHygieneSummary
 ): string {
   const lines: string[] = [];
 
@@ -183,5 +196,62 @@ export function buildSoulMarkdown(
     lines.push("");
   }
 
+  if (thirdPartyDocs.length > 0) {
+    lines.push("## Third-party integration documentation");
+    lines.push("| Package | Category | Used? | Docs |\n|---|---|---|---|");
+    for (const item of thirdPartyDocs) {
+      lines.push(
+        `| \`${item.packageName}\` | ${item.category} | ${item.used ? "✓" : "✗"} | ${item.docsUrl} |`
+      );
+    }
+    lines.push("");
+  }
+
+  lines.push("## Secret hygiene (do not commit secrets)");
+  if (secretHygiene.findings.length === 0) {
+    lines.push("- Status: ✅ No obvious secret exposures detected during scan.");
+  } else {
+    lines.push(`- Status: ⚠️ ${secretHygiene.findings.length} possible secret exposure signal(s) detected.`);
+    lines.push("- Review these files immediately:");
+    for (const finding of secretHygiene.findings.slice(0, 30)) {
+      lines.push(`  - ${finding.filePath} (${finding.kind})`);
+    }
+  }
+  lines.push("");
+
   return lines.join("\n");
+}
+
+const PACKAGE_DOC_OVERRIDES: Record<string, string> = {
+  "@azure/cosmos": "https://learn.microsoft.com/azure/cosmos-db/",
+  "@azure/identity": "https://learn.microsoft.com/javascript/api/overview/azure/identity-readme",
+  "@azure/storage-blob": "https://learn.microsoft.com/javascript/api/overview/azure/storage-blob-readme",
+  "@aws-sdk/client-dynamodb": "https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-client-dynamodb/",
+  "@microsoft/signalr": "https://learn.microsoft.com/aspnet/core/signalr/",
+  "@prisma/client": "https://www.prisma.io/docs/orm/prisma-client",
+  "@types/node": "https://nodejs.org/docs/latest-v22.x/api/",
+  chalk: "https://github.com/chalk/chalk",
+  commander: "https://github.com/tj/commander.js",
+  express: "https://expressjs.com/",
+  fastify: "https://www.fastify.io/docs/latest/",
+  koa: "https://koajs.com/",
+  mongoose: "https://mongoosejs.com/docs/",
+  react: "https://react.dev/",
+  sequelize: "https://sequelize.org/docs/v6/",
+  typeorm: "https://typeorm.io/"
+};
+
+function docsUrlForPackage(packageName: string): string {
+  return PACKAGE_DOC_OVERRIDES[packageName] || `https://www.npmjs.com/package/${packageName}`;
+}
+
+export function collectThirdPartyDocs(audit: DependencyAuditFindings): ThirdPartyDocLink[] {
+  return audit.entries
+    .map((entry) => ({
+      packageName: entry.name,
+      docsUrl: docsUrlForPackage(entry.name),
+      category: entry.category,
+      used: entry.used
+    }))
+    .sort((a, b) => a.packageName.localeCompare(b.packageName));
 }
