@@ -1,124 +1,70 @@
 # @monzingo89/engineer-maxxing
 
-Code-agnostic repository scanner that builds and updates a lightweight "cortex" memory of your codebase.
-
-## What it does
-
-When you run the CLI, it performs a learn pass over your repository and:
-
-- scans source/config/docs files
-- tracks progress and token usage
-- records observations/events into organ-style memory files
-- updates local Cortex context data for future passes
-
-It is designed to be simple, inspectable, and easy to extend.
+Lightweight repo-learning scanner that builds a persistent anatomy context.
 
 ## Quick start
 
-Run from any repository root:
+Run in a repo root:
 
 ```bash
 npx @monzingo89/engineer-maxxing
 ```
 
-Show options:
+Start fresh (reset anatomy + local state first):
 
 ```bash
-npx @monzingo89/engineer-maxxing --help
+npx @monzingo89/engineer-maxxing --fresh
 ```
+
+## What it creates
+
+The scanner writes to:
+
+- `anatomy/BRAIN.md`
+- `anatomy/EYES.md`
+- `anatomy/EARS.md`
+- `anatomy/NOSE.md`
+- `anatomy/HANDS.md`
+- `anatomy/SOUL.md`
+- `anatomy/HEART.md`
+- `.cortex/context.json`
+- `.cortex/token-usage.json`
+
+### Anatomy behavior
+
+- `BRAIN.md` is pre-seeded with code-agnostic engineering principles.
+- `EYES`, `EARS`, `NOSE`, `HANDS`, `SOUL`, `HEART` start empty (header only).
+- Initial scan populates observations and dependency audit (`SOUL`).
+- `HEART` is reserved for feature planning and is not populated by the initial scan.
+
+## Core capabilities
+
+- Real-time token usage and model handoff at threshold.
+- Resume-aware learning using persistent `.cortex/context.json`.
+- Container signal detection (Docker, Compose, AKS, ACA, Kubernetes).
+- Technology detection with docs links.
+- Architecture summary + pattern inference (DDD/multi-tenant/identity/database).
+- Symbol inventory and dead-code candidate detection.
+- Dependency health audit and unused dependency identification.
 
 ## CLI options
 
 - `--path <repoPath>`: explicit repository path.
-- `--max-file-bytes <bytes>`: max bytes from each file sent to prompts (default: `20000`).
-- `--include-ext ".toml,.env"`: additional file extensions to include in scans.
-- `--exclude-dir "tmp,artifacts"`: additional directory names to exclude.
-- `--quiet`: suppress per-file output.
-- `--verbose`: print detailed per-file token usage logs.
-- `--json-summary`: print a final JSON summary (auto-enables quiet mode unless `--verbose` is set).
-
-## Realtime token awareness
-
-During scans, the CLI shows model token usage in realtime, including cumulative total and percent of model budget used. This helps make handoff timing and model usage visible while the run is happening.
-
-## Technology detection and documentation links
-
-When technologies are detected (for example TypeScript, Node.js, GitHub Actions, Python), the tool records documentation links in repo memory outputs so users can quickly jump to official docs.
-
-- Technology observations are written into `EYES.md`.
-- Documentation context is appended to `BRAIN.md`.
-
-## High-level architecture and data-layer snapshot
-
-As files/directories are scanned, the Brain captures a high-level architecture map covering:
-
-- frontend code makeup
-- frontend code that talks to backend
-- backend code
-- backend code that talks to database
-- caching evidence
-- SignalR/realtime evidence
-
-The Brain starts **database-agnostic** by default and only records concrete database technologies when evidence is detected.
-
-## What gets updated
-
-The tool writes/updates these files in the target repo:
-
-- `EYES.md`
-- `HANDS.md`
-- `BRAIN.md`
-- `.cortex/context.json`
-- `.cortex/token-usage.json`
-
-## Production usage notes
-
-- The tool writes to repository-local memory files and `.cortex` state files.
-- Run it from the target repo root to keep outputs scoped correctly.
-- If you want machine-readable output for automation, use `--json-summary`.
-
-## CLI command name
-
-After global install (or in npm script contexts), the binary command name is:
-
-```bash
-engineer-maxxing
-```
-
-## Distribution plan
-
-Distribution process and release channels are documented in [`docs/distribution-plan.md`](./docs/distribution-plan.md).
+- `--fresh`: reset anatomy and local cortex state before scanning.
+- `--max-file-bytes <bytes>`: file bytes sent to prompts (default: `20000`).
+- `--include-ext ".toml,.env"`: add extensions to scan.
+- `--exclude-dir "tmp,artifacts"`: add directories to skip.
+- `--repo-models "Codex,ChatGPT,Gemini"`: declare repo authorship models.
+- `--quiet`: minimal output.
+- `--verbose`: detailed per-file output.
+- `--json-summary`: machine-readable summary.
 
 ## Development
 
-From this project:
-
 ```bash
-npm run dev
-npm run lint
 npm run build
 npm run test
-npm run verify:publish
-npm run release:patch
-npm run release:minor
 ```
-
-## Package publishing notes
-
-This package is configured for public scoped publishing:
-
-- package name: `@monzingo89/engineer-maxxing`
-- access: `public`
-- binary entry: `dist/cortex/cli/learn.js`
-
-## Troubleshooting
-
-- **npm publish 403 (2FA/token policy)**:
-	use a valid npm token with package write permission and bypass 2FA for publish (or publish with OTP when required).
-- **Noisy output in CI**:
-	run with `--json-summary` (and optionally without `--verbose`).
-- **Unexpected scan scope**:
-	use `--path`, `--include-ext`, and `--exclude-dir` to tune inputs.
 
 ## License
 

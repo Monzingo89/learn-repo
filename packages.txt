@@ -1,7 +1,2 @@
 commander
 chalk
-ora
-zod
-fast-glob
-ignore
-chokidar

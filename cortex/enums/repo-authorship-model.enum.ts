@@ -1,0 +1,10 @@
+export enum RepoAuthorshipModel {
+  MANUAL = "MANUAL",
+  CODEX = "CODEX",
+  GROK = "GROK",
+  CHATGPT = "CHATGPT",
+  CLAUDE_HAIKU = "CLAUDE_HAIKU",
+  CLAUDE_SONNET = "CLAUDE_SONNET",
+  CLAUDE_OPUS = "CLAUDE_OPUS",
+  GEMINI = "GEMINI"
+}

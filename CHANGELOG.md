@@ -5,7 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/).
 
-## [1.0.1] - Unreleased
+## [Unreleased]
+
+### Added
+- Placeholder for upcoming changes.
+
+## [1.0.2] - 2026-05-17
+
+### Added
+- Anatomy system under `anatomy/` with `BRAIN.md`, `EYES.md`, `EARS.md`, `NOSE.md`, `HANDS.md`, `SOUL.md`, and `HEART.md`.
+- Container platform detection and observable context events (`Docker`, `Compose`, `AKS`, `Container Apps`, Kubernetes manifests).
+- Repo authorship model enum + parsing and colorized model attribution during scanning.
+- Task-aware resume and handoff continuity using `.cortex/context.json` and token budget-aware model handoff.
+- Dependency audit workflow for `SOUL.md` including health score and unused runtime dependency analysis.
+- Architecture pattern inference (DDD, multi-tenant signals, identity provider hints, database paradigm summary).
+- CLI `--fresh` mode to reset anatomy and local `.cortex` scan state before a new learn pass.
+
+### Changed
+- Scanner now writes anatomy outputs to `anatomy/*` and uses `anatomy/BRAIN.md` as the live brain context source.
+- `README.md` simplified for quick-start and operational clarity.
+- Runtime dependency surface simplified to only used dependencies (`chalk`, `commander`).
+
+## [1.0.1] - 2026-05-16
 
 ### Added
 - CLI options for path selection, file size limits, include/exclude controls, and output modes (`--quiet`, `--verbose`, `--json-summary`).
@@ -32,4 +53,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Packaging and publish verification scripts (`verify:publish`, `prepublishOnly`).
 - Open-source project documentation (`README.md`) and licensing (`MIT`).
 
+[Unreleased]: https://github.com/Monzingo89/engineer-maxxing/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/Monzingo89/engineer-maxxing/releases/tag/v1.0.2
+[1.0.1]: https://github.com/Monzingo89/engineer-maxxing/releases/tag/v1.0.1
 [1.0.0]: https://github.com/Monzingo89/engineer-maxxing/releases/tag/v1.0.0

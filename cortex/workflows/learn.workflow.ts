@@ -1,8 +1,10 @@
 import fs from "fs";
 import path from "path";
+import chalk from "chalk";
 import { GlobalContext } from "../observable/global-context.js";
 import { WorkUnit } from "../enums/work-unit.enum.js";
 import { ModelId } from "../enums/model.enum.js";
+import { RepoTask } from "../enums/repo-task.enum.js";
 import { selectModelForWorkUnit, MODEL_REGISTRY } from "../models/model-registry.js";
 import { FileScanPrompt } from "../prompts/scan/file-scan.prompt.js";
 import { ContextHandoffPrompt } from "../prompts/handoff/context-handoff.prompt.js";
@@ -17,8 +19,18 @@ import {
 import { createRepoEvent } from "../events/event-factory.js";
 import { RepoEventType } from "../enums/repo-event-type.enum.js";
 import { RepoMemoryFile } from "../enums/repo-memory-file.enum.js";
-import { appendOrganEvent, appendBrainText } from "../writers/organ-writer.js";
+import { appendOrganEvent, appendBrainText, ensureAnatomyFilesExist, writeAnatomyFile } from "../writers/organ-writer.js";
 import { detectTechnologiesForPath } from "./technology-docs.js";
+import {
+  colorizeRepoAuthorshipModel,
+  detectFileAuthorship,
+  formatRepoAuthorshipModel,
+  resolveRepoAuthorshipModels
+} from "./model-authorship.js";
+import {
+  detectContainerPlatformsForFile,
+  detectContainerPlatformsFromRoot
+} from "./container-detection.js";
 import {
   analyzeFileForArchitecture,
   architectureSnapshotSummary,
@@ -26,6 +38,31 @@ import {
   createArchitectureSnapshot,
   type ArchitectureSnapshot
 } from "./architecture-snapshot.js";
+import { detectSubRepos } from "./sub-repo-detection.js";
+import {
+  analyzeFileForSymbolInventory,
+  buildSymbolInventoryMarkdown,
+  createSymbolInventory
+} from "./symbol-inventory.js";
+import {
+  analyzeFileForDeadCode,
+  createDeadCodeAccumulator,
+  finalizeDeadCodeCandidates
+} from "./dead-code-detection.js";
+import {
+  analyzeFileForDependencyUsage,
+  buildDependencyAudit,
+  buildSoulMarkdown,
+  createDependencyUsageAccumulator
+} from "./dependency-audit.js";
+import {
+  analyzeFileForArchitecturePatterns,
+  buildArchitecturePatternsMarkdown,
+  createArchitecturePatternAccumulator,
+  finalizeArchitecturePatterns
+} from "./architecture-patterns.js";
+import { inferBackendProtocols } from "./heart-plan.js";
+import { BackendProtocol } from "../enums/backend-protocol.enum.js";
 
 const DEFAULT_IGNORE_DIRS = new Set([
   "node_modules",
@@ -60,6 +97,8 @@ export type LearnOptions = {
   maxFileBytes: number;
   includeExt: string[];
   excludeDirs: string[];
+  repoModels: string[];
+  freshStart: boolean;
   quiet: boolean;
   verbose: boolean;
 };
@@ -78,14 +117,29 @@ export type LearnSummary = {
   durationMs: number;
   detectedTechnologies: DetectedTechnologySummary[];
   tokenUsageByModel: TokenLedger;
+  containerPlatforms: string[];
+  repoAuthoringModels: string[];
+  fileAuthorshipCounts: Record<string, number>;
   architecture: ReturnType<typeof architectureSnapshotSummary>;
   distributionPlanPath: string;
+  resumed: boolean;
+  resumedAfter?: string;
+  subRepoCount: number;
+  deadCodeCandidateCount: number;
+  dependencyHealthScore: number;
+  unusedDependencyCount: number;
+  identityProvider: string;
+  dddDetected: boolean;
+  multiTenantDetected: boolean;
+  backendProtocols: string[];
 };
 
 const DEFAULT_LEARN_OPTIONS: LearnOptions = {
   maxFileBytes: 20000,
   includeExt: [],
   excludeDirs: [],
+  repoModels: [],
+  freshStart: false,
   quiet: false,
   verbose: false
 };
@@ -136,7 +190,7 @@ function walk(dir: string, includeExtensions: Set<string>, excludeDirs: Set<stri
 }
 
 function readBrainContext(repoRoot: string) {
-  const brainPath = path.join(repoRoot, "BRAIN.md");
+  const brainPath = path.join(repoRoot, RepoMemoryFile.BRAIN);
   if (!fs.existsSync(brainPath)) return "";
   return fs.readFileSync(brainPath, "utf8").slice(-12000);
 }
@@ -154,7 +208,15 @@ async function handoffIfNeeded(modelId: ModelId, options: LearnOptions): Promise
   }
 
   const nextModel = ModelId.DEFAULT_REASONING;
-  const context = JSON.stringify(GlobalContext.get()).slice(-20000);
+  const state = GlobalContext.get();
+  const context = JSON.stringify({
+    activeContext: state.activeContext,
+    learned: state.learned,
+    latestEyes: state.eyes.slice(-20),
+    latestNose: state.nose.slice(-20),
+    latestEars: state.ears.slice(-20),
+    latestBrain: state.brain.slice(-20)
+  }).slice(-20000);
 
   const prompt = new ContextHandoffPrompt({
     fromModel: modelId,
@@ -184,6 +246,7 @@ async function handoffIfNeeded(modelId: ModelId, options: LearnOptions): Promise
 
   GlobalContext.pushEvent(event);
   appendOrganEvent(event);
+  GlobalContext.setLastHandoff(modelId, nextModel);
 
   return nextModel;
 }
@@ -191,14 +254,106 @@ async function handoffIfNeeded(modelId: ModelId, options: LearnOptions): Promise
 export async function learn(repoRoot: string, inputOptions?: Partial<LearnOptions>): Promise<LearnSummary> {
   const options = resolveLearnOptions(inputOptions);
 
+  if (options.freshStart) {
+    fs.rmSync(path.join(repoRoot, ".cortex", "context.json"), { force: true });
+    fs.rmSync(path.join(repoRoot, ".cortex", "token-usage.json"), { force: true });
+    ensureAnatomyFilesExist({ reset: true });
+  } else {
+    ensureAnatomyFilesExist();
+  }
+
   const includeExtensions = new Set(DEFAULT_CODE_EXTENSIONS);
   for (const extension of options.includeExt) includeExtensions.add(extension);
 
   const excludeDirs = new Set(DEFAULT_IGNORE_DIRS);
   for (const dir of options.excludeDirs) excludeDirs.add(dir);
 
+  const previousState = GlobalContext.get();
+  const previousLearnTask = previousState.activeContext.tasks[RepoTask.LEARN_REPO];
+  const resumeFromFile =
+    previousLearnTask.status === "in_progress" && previousState.activeContext.lastCompletedFile
+      ? previousState.activeContext.lastCompletedFile
+      : undefined;
+
+  if (resumeFromFile && !options.quiet) {
+    console.log(
+      chalk.green(
+        `Resuming LEARN_REPO at ${previousLearnTask.percentComplete}% — last completed file: ${resumeFromFile}`
+      )
+    );
+
+    const resumeEvent = createRepoEvent({
+      type: RepoEventType.RESUME_DETECTED,
+      targetFile: RepoMemoryFile.BRAIN,
+      title: "Resumed prior learn pass",
+      summary: `Resumed LEARN_REPO after ${resumeFromFile} at ${previousLearnTask.percentComplete}%.`,
+      evidence: [
+        `Previous completed: ${previousLearnTask.completedItems}/${previousLearnTask.totalItems}`,
+        `Last file: ${resumeFromFile}`
+      ],
+      severity: "info",
+      confidence: "high"
+    });
+
+    GlobalContext.pushEvent(resumeEvent);
+    appendOrganEvent(resumeEvent);
+  }
+
+  const resolvedAuthorship = resolveRepoAuthorshipModels(repoRoot, options.repoModels);
+  GlobalContext.setRepoAuthoringModels(resolvedAuthorship.config.selectedModels);
+
+  if (resolvedAuthorship.invalidInputs.length > 0 && !options.quiet) {
+    console.log(
+      chalk.yellow(
+        `Ignored unknown --repo-models values: ${resolvedAuthorship.invalidInputs.join(", ")}`
+      )
+    );
+  }
+
+  if (resolvedAuthorship.source === "bootstrap" && !options.quiet) {
+    console.log(
+      chalk.cyan(
+        "Authorship profile initialized at .cortex/repo-authorship.json. Use --repo-models to declare model authorship (Codex, Grok, ChatGPT, Claude Haiku/Sonnet/Opus, Gemini)."
+      )
+    );
+  }
+
   const files = walk(repoRoot, includeExtensions, excludeDirs);
-  GlobalContext.updateProgress({ totalFiles: files.length });
+  const uniqueDirectories = new Set(files.map((filePath) => path.dirname(path.relative(repoRoot, filePath))));
+
+  GlobalContext.updateProgress({
+    totalFiles: files.length,
+    scannedFiles: 0,
+    totalDirectories: uniqueDirectories.size,
+    scannedDirectories: 0
+  });
+
+  GlobalContext.setTaskProgress(RepoTask.LEARN_REPO, {
+    status: "in_progress",
+    totalItems: files.length,
+    completedItems: 0,
+    note: "Initial repository learning pass."
+  });
+
+  const rootContainerDetections = detectContainerPlatformsFromRoot(repoRoot);
+  for (const detection of rootContainerDetections) {
+    GlobalContext.recordContainerObservation(detection.platform, detection.evidencePath);
+
+    const containerEvent = createRepoEvent({
+      type: RepoEventType.CONTAINER_OBSERVED,
+      targetFile: RepoMemoryFile.EYES,
+      title: `Detected container platform: ${detection.platform}`,
+      summary: detection.reason,
+      sourcePath: detection.evidencePath,
+      directory: path.dirname(detection.evidencePath),
+      evidence: [detection.reason],
+      severity: "info",
+      confidence: "high"
+    });
+
+    GlobalContext.pushEvent(containerEvent);
+    appendOrganEvent(containerEvent);
+  }
 
   if (!options.quiet) {
     console.log("Starting Cortex learn pass.");
@@ -208,11 +363,27 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
   const startedAt = Date.now();
 
   let scannedFiles = 0;
+  const scannedDirectories = new Set<string>();
+  const observedContainerPlatforms = new Set(rootContainerDetections.map((item) => item.platform));
   const detectedTechMap = new Map<string, { id: string; name: string; docsUrl: string; detectedIn: Set<string> }>();
   const architectureSnapshot: ArchitectureSnapshot = createArchitectureSnapshot();
+  const symbolInventory = createSymbolInventory();
+  const deadCodeAccumulator = createDeadCodeAccumulator();
+  const dependencyUsage = createDependencyUsageAccumulator();
+  const architecturePatterns = createArchitecturePatternAccumulator();
+  const backendProtocolSet = new Set<BackendProtocol>();
+
+  let skippingForResume = Boolean(resumeFromFile);
 
   for (const filePath of files) {
     const relativePath = path.relative(repoRoot, filePath);
+
+    if (skippingForResume) {
+      if (relativePath === resumeFromFile) {
+        skippingForResume = false;
+      }
+      continue;
+    }
 
     for (const technology of detectTechnologiesForPath(relativePath)) {
       const existing = detectedTechMap.get(technology.id);
@@ -253,7 +424,48 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
     });
 
     const content = readFileForPrompt(filePath, options.maxFileBytes);
+
+    for (const detection of detectContainerPlatformsForFile(relativePath, content)) {
+      GlobalContext.recordContainerObservation(detection.platform, detection.evidencePath);
+
+      if (!observedContainerPlatforms.has(detection.platform)) {
+        observedContainerPlatforms.add(detection.platform);
+
+        const containerEvent = createRepoEvent({
+          type: RepoEventType.CONTAINER_OBSERVED,
+          targetFile: RepoMemoryFile.EYES,
+          title: `Detected container platform: ${detection.platform}`,
+          summary: detection.reason,
+          sourcePath: detection.evidencePath,
+          directory: path.dirname(detection.evidencePath),
+          evidence: [detection.reason],
+          severity: "info",
+          confidence: "high"
+        });
+
+        GlobalContext.pushEvent(containerEvent);
+        appendOrganEvent(containerEvent);
+      }
+    }
+
+    const authorship = detectFileAuthorship(
+      relativePath,
+      content,
+      resolvedAuthorship.config.selectedModels
+    );
+    GlobalContext.recordFileAuthorship(authorship.model);
+
+    const authorshipLabel = formatRepoAuthorshipModel(authorship.model);
+    const coloredPath = colorizeRepoAuthorshipModel(authorship.model, relativePath);
+    const coloredAuthorship = colorizeRepoAuthorshipModel(authorship.model, authorshipLabel);
+
     const architectureDelta = analyzeFileForArchitecture(relativePath, content, architectureSnapshot);
+
+    analyzeFileForSymbolInventory(relativePath, content, symbolInventory);
+    analyzeFileForDeadCode(relativePath, content, deadCodeAccumulator);
+    analyzeFileForDependencyUsage(relativePath, content, dependencyUsage);
+    analyzeFileForArchitecturePatterns(relativePath, content, architecturePatterns);
+    for (const protocol of inferBackendProtocols(content)) backendProtocolSet.add(protocol);
 
     if (options.verbose && architectureDelta.newlyDetectedDatabaseTechnologies.length > 0) {
       console.log(`[db-tech] ${relativePath} -> ${architectureDelta.newlyDetectedDatabaseTechnologies.join(", ")}`);
@@ -278,7 +490,11 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
       summary: "File was scanned during the first learn pass.",
       sourcePath: relativePath,
       directory: path.dirname(relativePath),
-      evidence: [`Model used: ${modelId}`],
+      evidence: [
+        `Model used: ${modelId}`,
+        `Authorship: ${authorshipLabel}`,
+        authorship.evidence
+      ],
       severity: "info",
       confidence: "high"
     });
@@ -286,8 +502,33 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
     GlobalContext.pushEvent(event);
     appendOrganEvent(event);
 
+    const authorshipEvent = createRepoEvent({
+      type: RepoEventType.FILE_AUTHORSHIP_OBSERVED,
+      targetFile: RepoMemoryFile.EYES,
+      title: `Authorship observed in ${relativePath}`,
+      summary: `Detected authorship as ${authorshipLabel}.`,
+      sourcePath: relativePath,
+      directory: path.dirname(relativePath),
+      evidence: [authorship.evidence],
+      severity: "info",
+      confidence: "medium"
+    });
+
+    GlobalContext.pushEvent(authorshipEvent);
+    appendOrganEvent(authorshipEvent);
+
     scannedFiles += 1;
-    GlobalContext.updateProgress({ scannedFiles });
+    scannedDirectories.add(path.dirname(relativePath));
+    GlobalContext.setLastCompletedFile(relativePath);
+    GlobalContext.updateProgress({
+      scannedFiles,
+      scannedDirectories: scannedDirectories.size
+    });
+    GlobalContext.setTaskProgress(RepoTask.LEARN_REPO, {
+      status: scannedFiles >= files.length ? "completed" : "in_progress",
+      totalItems: files.length,
+      completedItems: scannedFiles
+    });
 
     const state = GlobalContext.get();
     const pct = state.activeContext.progress.percentComplete;
@@ -297,11 +538,11 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
 
     if (!options.quiet && options.verbose) {
       console.log(
-        `[scan] ${scannedFiles}/${files.length} (${pct}%) | ${relativePath} | model=${modelId} | +${inputTokens + outputTokens} tokens (in:${inputTokens}, out:${outputTokens}) | total=${updatedTokens.totalTokens}/${modelConfig.maxTokens} (${tokenPct}%)`
+        `[scan] ${scannedFiles}/${files.length} (${pct}%) | ${coloredPath} | model=${modelId} | author=${coloredAuthorship} | +${inputTokens + outputTokens} tokens (in:${inputTokens}, out:${outputTokens}) | total=${updatedTokens.totalTokens}/${modelConfig.maxTokens} (${tokenPct}%)`
       );
     } else if (!options.quiet) {
       process.stdout.write(
-        `\rLearning: ${scannedFiles}/${files.length} files | ${pct}% | model=${modelId} | tokens=${updatedTokens.totalTokens}/${modelConfig.maxTokens} (${tokenPct}%) | file=${relativePath.slice(0, 60)}   `
+        `\rLearning: ${scannedFiles}/${files.length} files | ${pct}% | model=${modelId} | author=${coloredAuthorship} | tokens=${updatedTokens.totalTokens}/${modelConfig.maxTokens} (${tokenPct}%) | file=${coloredPath.slice(0, 60)}   `
       );
     }
   }
@@ -309,6 +550,26 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
   if (!options.quiet && !options.verbose) {
     console.log("");
   }
+
+  GlobalContext.setTaskProgress(RepoTask.LEARN_REPO, {
+    status: "completed",
+    totalItems: files.length,
+    completedItems: scannedFiles,
+    note: "Initial repository learning pass completed."
+  });
+
+  const taskEvent = createRepoEvent({
+    type: RepoEventType.TASK_PROGRESS_UPDATED,
+    targetFile: RepoMemoryFile.HANDS,
+    title: "Task completed: LEARN_REPO",
+    summary: "Learn repo task reached 100% and is ready for CLEAN_REPO and SIMPLIFY_REPO phases.",
+    evidence: [`Completed ${scannedFiles}/${files.length} files.`],
+    severity: "info",
+    confidence: "high"
+  });
+
+  GlobalContext.pushEvent(taskEvent);
+  appendOrganEvent(taskEvent);
 
   const detectedTechnologies = Array.from(detectedTechMap.values())
     .map((technology) => ({
@@ -359,8 +620,121 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
   GlobalContext.pushEvent(architectureEvent);
   appendOrganEvent(architectureEvent);
 
+  // === Anatomy build-out: sub-repos, symbols, dead code, dependency audit, architecture patterns, HEART ===
+  const subRepos = detectSubRepos(repoRoot);
+  GlobalContext.setSubRepos(subRepos);
+
+  if (subRepos.length > 0) {
+    const subRepoEvent = createRepoEvent({
+      type: RepoEventType.SUB_REPO_DETECTED,
+      targetFile: RepoMemoryFile.EYES,
+      title: `Detected ${subRepos.length} sub-repo(s) or workspace package(s)`,
+      summary: "Nested repositories, git submodules, or monorepo workspace packages were detected.",
+      evidence: subRepos.map((finding) => `${finding.kind}: ${finding.relativePath}`),
+      severity: "info",
+      confidence: "high"
+    });
+
+    GlobalContext.pushEvent(subRepoEvent);
+    appendOrganEvent(subRepoEvent);
+  }
+
+  const deadCodeCandidates = finalizeDeadCodeCandidates(deadCodeAccumulator);
+  GlobalContext.setDeadCodeCandidates(deadCodeCandidates);
+
+  if (deadCodeCandidates.length > 0) {
+    const deadCodeEvent = createRepoEvent({
+      type: RepoEventType.DEAD_CODE_CANDIDATE,
+      targetFile: RepoMemoryFile.NOSE,
+      title: `${deadCodeCandidates.length} possible dead-code file(s)`,
+      summary:
+        "Files have no inbound local imports and are not standard entrypoints (cli/, bin/, index, main, server, .test, .spec, .config).",
+      evidence: deadCodeCandidates.slice(0, 25),
+      severity: "medium",
+      confidence: "medium"
+    });
+
+    GlobalContext.pushEvent(deadCodeEvent);
+    appendOrganEvent(deadCodeEvent);
+  }
+
+  GlobalContext.setSymbolInventory(symbolInventory);
+  const symbolMarkdown = buildSymbolInventoryMarkdown(symbolInventory);
+  appendBrainText("Symbol Inventory", symbolMarkdown);
+
+  const symbolEvent = createRepoEvent({
+    type: RepoEventType.SYMBOL_INVENTORY_UPDATED,
+    targetFile: RepoMemoryFile.BRAIN,
+    title: "Symbol inventory updated",
+    summary: "Counts and sample paths for interfaces, classes, enums, type aliases, and model-like files.",
+    evidence: symbolMarkdown.split("\n").filter(Boolean),
+    severity: "info",
+    confidence: "medium"
+  });
+
+  GlobalContext.pushEvent(symbolEvent);
+  appendOrganEvent(symbolEvent);
+
+  const dependencyAudit = buildDependencyAudit(repoRoot, dependencyUsage);
+
+  if (dependencyAudit) {
+    GlobalContext.setDependencyAudit(dependencyAudit);
+
+    const technologyDocs = Array.from(detectedTechMap.values()).map((tech) => ({
+      name: tech.name,
+      docsUrl: tech.docsUrl
+    }));
+
+    const soulMarkdown = buildSoulMarkdown(dependencyAudit, technologyDocs);
+    writeAnatomyFile(RepoMemoryFile.SOUL, soulMarkdown);
+
+    const dependencyEvent = createRepoEvent({
+      type: RepoEventType.DEPENDENCY_AUDIT_COMPLETED,
+      targetFile: RepoMemoryFile.BRAIN,
+      title: `Dependency audit complete — score ${dependencyAudit.healthScore}/100`,
+      summary: `${dependencyAudit.usedDependencies}/${dependencyAudit.totalDependencies} dependencies used; ${dependencyAudit.unusedDependencies.length} unused runtime; ${dependencyAudit.heavyDependencies.length} heavy.`,
+      evidence: [
+        `manifest: ${dependencyAudit.manifestPath}`,
+        `unused: ${dependencyAudit.unusedDependencies.slice(0, 10).join(", ") || "none"}`,
+        `heavy: ${dependencyAudit.heavyDependencies.join(", ") || "none"}`
+      ],
+      severity: dependencyAudit.healthScore < 70 ? "medium" : "info",
+      confidence: "medium"
+    });
+
+    GlobalContext.pushEvent(dependencyEvent);
+    appendOrganEvent(dependencyEvent);
+  }
+
+  const architectureFindings = finalizeArchitecturePatterns(architecturePatterns);
+  GlobalContext.setArchitecturePatterns(architectureFindings);
+
+  const patternsMarkdown = buildArchitecturePatternsMarkdown(architectureFindings);
+  appendBrainText("Architecture Patterns (DDD, multi-tenancy, identity, database)", patternsMarkdown);
+
+  const patternsEvent = createRepoEvent({
+    type: RepoEventType.ARCHITECTURE_PATTERN_DETECTED,
+    targetFile: RepoMemoryFile.BRAIN,
+    title: "Architecture patterns detected",
+    summary: `DDD=${architectureFindings.domainDrivenDesign.detected}; multi-tenant=${architectureFindings.multiTenant.detected}; identity=${architectureFindings.identity.provider}; db=${architectureFindings.database.paradigm}.`,
+    evidence: patternsMarkdown.split("\n").filter(Boolean),
+    severity: "info",
+    confidence: "medium"
+  });
+
+  GlobalContext.pushEvent(patternsEvent);
+  appendOrganEvent(patternsEvent);
+
+  const backendProtocols = Array.from(backendProtocolSet);
+  // HEART.md is intentionally not generated during the initial scan.
+  // It is reserved for feature-work planning sessions (visual/frontend/backend/infra changes).
+
+  GlobalContext.markSaved();
+  // === End anatomy build-out ===
+
   const durationMs = Date.now() - startedAt;
   const architecture = architectureSnapshotSummary(architectureSnapshot);
+  const state = GlobalContext.get();
 
   const summary: LearnSummary = {
     repoRoot,
@@ -369,18 +743,58 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
     durationMs,
     detectedTechnologies,
     tokenUsageByModel: readTokenLedger(),
+    containerPlatforms: Object.keys(state.activeContext.containers).sort((a, b) => a.localeCompare(b)),
+    repoAuthoringModels: state.activeContext.repoAuthoringModels,
+    fileAuthorshipCounts: {
+      ...state.activeContext.fileAuthorshipCounts
+    },
     architecture,
-    distributionPlanPath: "docs/distribution-plan.md"
+    distributionPlanPath: "docs/distribution-plan.md",
+    resumed: Boolean(resumeFromFile),
+    resumedAfter: resumeFromFile,
+    subRepoCount: subRepos.length,
+    deadCodeCandidateCount: deadCodeCandidates.length,
+    dependencyHealthScore: dependencyAudit?.healthScore ?? 100,
+    unusedDependencyCount: dependencyAudit?.unusedDependencies.length ?? 0,
+    identityProvider: architectureFindings.identity.provider,
+    dddDetected: architectureFindings.domainDrivenDesign.detected,
+    multiTenantDetected: architectureFindings.multiTenant.detected,
+    backendProtocols
   };
 
   if (!options.quiet) {
     console.log("Cortex learn pass complete.");
-    console.log("Updated: EYES.md, HANDS.md, BRAIN.md, .cortex/context.json, .cortex/token-usage.json");
+    console.log(
+      "Updated: anatomy/EYES.md, anatomy/HANDS.md, anatomy/BRAIN.md, anatomy/NOSE.md, anatomy/SOUL.md, .cortex/context.json, .cortex/token-usage.json"
+    );
+
+    if (summary.resumed) {
+      console.log(chalk.green(`Resumed from previous run after ${summary.resumedAfter}.`));
+    }
 
     if (detectedTechnologies.length > 0) {
       console.log("Detected technologies with docs:");
       for (const technology of detectedTechnologies) {
         console.log(`- ${technology.name}: ${technology.docsUrl}`);
+      }
+    }
+
+    if (summary.containerPlatforms.length > 0) {
+      console.log(`Detected container platforms: ${summary.containerPlatforms.join(", ")}`);
+    }
+
+    if (subRepos.length > 0) {
+      console.log(`Sub-repos / workspace packages detected: ${subRepos.length}`);
+      for (const finding of subRepos.slice(0, 10)) {
+        console.log(`- [${finding.kind}] ${finding.relativePath}`);
+      }
+    }
+
+    if (Object.keys(summary.fileAuthorshipCounts).length > 0) {
+      console.log("Authorship distribution:");
+      for (const [model, count] of Object.entries(summary.fileAuthorshipCounts)) {
+        const readableModel = formatRepoAuthorshipModel(model as never);
+        console.log(`- ${readableModel}: ${count}`);
       }
     }
 
@@ -395,6 +809,20 @@ export async function learn(repoRoot: string, inputOptions?: Partial<LearnOption
       `- Database technology: ${architecture.databaseAgnostic ? "Database-agnostic (not detected yet)" : architecture.databaseTechnologies.join(", ")}`
     );
 
+    console.log("Architecture patterns:");
+    console.log(`- DDD: ${architectureFindings.domainDrivenDesign.detected} (${architectureFindings.domainDrivenDesign.confidence})`);
+    console.log(`- Multi-tenant: ${architectureFindings.multiTenant.detected} (${architectureFindings.multiTenant.confidence})`);
+    console.log(`- Identity provider: ${architectureFindings.identity.provider}; roles=${architectureFindings.identity.rolesUsed}; claims=${architectureFindings.identity.claimsUsed}`);
+    console.log(`- Database paradigm: ${architectureFindings.database.paradigm}`);
+
+    if (dependencyAudit) {
+      console.log(
+        `SOUL — dependency health: ${dependencyAudit.healthScore}/100 (${dependencyAudit.usedDependencies}/${dependencyAudit.totalDependencies} used, ${dependencyAudit.unusedDependencies.length} unused runtime)`
+      );
+    }
+
+    console.log(`Dead-code candidates: ${deadCodeCandidates.length}`);
+    console.log(`Backend protocols detected: ${backendProtocols.join(", ") || "none"}`);
     console.log(`Distribution plan: ${summary.distributionPlanPath}`);
   }
 

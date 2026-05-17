@@ -1,10 +1,23 @@
 import fs from "fs";
 import path from "path";
-import { RepoBrainState, createInitialRepoBrainState } from "../context/repo-brain.store.js";
+import {
+  RepoBrainState,
+  ContainerObservation,
+  RepoTaskProgress,
+  SubRepoFinding,
+  SymbolInventory,
+  DependencyAuditFindings,
+  ArchitecturePatternFindings,
+  createInitialRepoBrainState,
+  hydrateRepoBrainState
+} from "../context/repo-brain.store.js";
 import { RepoEvent } from "../context/repo-event.types.js";
 import { RepoMemoryFile } from "../enums/repo-memory-file.enum.js";
 import { ModelId } from "../enums/model.enum.js";
 import { WorkUnit } from "../enums/work-unit.enum.js";
+import { ContainerPlatform } from "../enums/container-platform.enum.js";
+import { RepoTask } from "../enums/repo-task.enum.js";
+import { RepoAuthorshipModel } from "../enums/repo-authorship-model.enum.js";
 
 const contextPath = path.join(process.cwd(), ".cortex", "context.json");
 
@@ -13,17 +26,24 @@ type Listener = (state: RepoBrainState) => void;
 class GlobalContextStore {
   private listeners: Listener[] = [];
 
+  private ensureContextDirectory() {
+    fs.mkdirSync(path.dirname(contextPath), { recursive: true });
+  }
+
   get(): RepoBrainState {
     if (!fs.existsSync(contextPath)) {
       return createInitialRepoBrainState(process.cwd());
     }
 
-    return JSON.parse(fs.readFileSync(contextPath, "utf8"));
+    const parsed = JSON.parse(fs.readFileSync(contextPath, "utf8"));
+    return hydrateRepoBrainState(parsed, process.cwd());
   }
 
   set(state: RepoBrainState) {
-    fs.writeFileSync(contextPath, JSON.stringify(state, null, 2), "utf8");
-    this.listeners.forEach((listener) => listener(state));
+    this.ensureContextDirectory();
+    const hydrated = hydrateRepoBrainState(state, process.cwd());
+    fs.writeFileSync(contextPath, JSON.stringify(hydrated, null, 2), "utf8");
+    this.listeners.forEach((listener) => listener(hydrated));
   }
 
   subscribe(listener: Listener) {
@@ -91,9 +111,131 @@ class GlobalContextStore {
       ...state,
       activeContext: {
         ...state.activeContext,
+        remainingFiles: Math.max(0, progress.totalFiles - progress.scannedFiles),
         progress: {
           ...progress,
           percentComplete
+        }
+      }
+    });
+  }
+
+  setTaskProgress(task: RepoTask, input: Partial<RepoTaskProgress>) {
+    const state = this.get();
+    const current = state.activeContext.tasks[task];
+    const nextBase = {
+      ...current,
+      ...input,
+      updatedAt: new Date().toISOString()
+    };
+
+    const totalItems = Number.isFinite(nextBase.totalItems) ? Math.max(0, nextBase.totalItems) : 0;
+    const completedItems = Number.isFinite(nextBase.completedItems)
+      ? Math.max(0, Math.min(nextBase.completedItems, totalItems || Number.MAX_SAFE_INTEGER))
+      : 0;
+    const remainingItems = Math.max(0, totalItems - completedItems);
+    const percentComplete = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+
+    this.set({
+      ...state,
+      activeContext: {
+        ...state.activeContext,
+        tasks: {
+          ...state.activeContext.tasks,
+          [task]: {
+            ...nextBase,
+            totalItems,
+            completedItems,
+            remainingItems,
+            percentComplete
+          }
+        }
+      }
+    });
+  }
+
+  setRepoAuthoringModels(models: RepoAuthorshipModel[]) {
+    const state = this.get();
+    const uniqueModels = Array.from(new Set(models));
+
+    this.set({
+      ...state,
+      activeContext: {
+        ...state.activeContext,
+        repoAuthoringModels: uniqueModels
+      }
+    });
+  }
+
+  recordContainerObservation(platform: ContainerPlatform, evidencePath: string) {
+    const state = this.get();
+    const existing = state.activeContext.containers[platform] as ContainerObservation | undefined;
+    const now = new Date().toISOString();
+
+    const next: ContainerObservation = existing
+      ? {
+          ...existing,
+          evidencePaths: Array.from(new Set([...existing.evidencePaths, evidencePath])),
+          lastDetectedAt: now
+        }
+      : {
+          platform,
+          evidencePaths: [evidencePath],
+          firstDetectedAt: now,
+          lastDetectedAt: now
+        };
+
+    this.set({
+      ...state,
+      activeContext: {
+        ...state.activeContext,
+        containers: {
+          ...state.activeContext.containers,
+          [platform]: next
+        }
+      }
+    });
+  }
+
+  recordFileAuthorship(model: RepoAuthorshipModel) {
+    const state = this.get();
+    const existing = state.activeContext.fileAuthorshipCounts[model] || 0;
+
+    this.set({
+      ...state,
+      activeContext: {
+        ...state.activeContext,
+        fileAuthorshipCounts: {
+          ...state.activeContext.fileAuthorshipCounts,
+          [model]: existing + 1
+        }
+      }
+    });
+  }
+
+  setLastCompletedFile(filePath: string) {
+    const state = this.get();
+
+    this.set({
+      ...state,
+      activeContext: {
+        ...state.activeContext,
+        lastCompletedFile: filePath
+      }
+    });
+  }
+
+  setLastHandoff(fromModel: ModelId, toModel: ModelId) {
+    const state = this.get();
+
+    this.set({
+      ...state,
+      activeContext: {
+        ...state.activeContext,
+        lastHandoff: {
+          fromModel,
+          toModel,
+          at: new Date().toISOString()
         }
       }
     });
@@ -120,6 +262,54 @@ class GlobalContextStore {
     this.set({
       ...state,
       learned: nextLearned
+    });
+  }
+
+  setSubRepos(subRepos: SubRepoFinding[]) {
+    const state = this.get();
+    this.set({
+      ...state,
+      learned: { ...state.learned, subRepos }
+    });
+  }
+
+  setDeadCodeCandidates(deadCodeCandidates: string[]) {
+    const state = this.get();
+    this.set({
+      ...state,
+      learned: { ...state.learned, deadCodeCandidates }
+    });
+  }
+
+  setSymbolInventory(symbolInventory: SymbolInventory) {
+    const state = this.get();
+    this.set({
+      ...state,
+      learned: { ...state.learned, symbolInventory }
+    });
+  }
+
+  setDependencyAudit(dependencyAudit: DependencyAuditFindings) {
+    const state = this.get();
+    this.set({
+      ...state,
+      learned: { ...state.learned, dependencyAudit }
+    });
+  }
+
+  setArchitecturePatterns(architecturePatterns: ArchitecturePatternFindings) {
+    const state = this.get();
+    this.set({
+      ...state,
+      learned: { ...state.learned, architecturePatterns }
+    });
+  }
+
+  markSaved() {
+    const state = this.get();
+    this.set({
+      ...state,
+      learned: { ...state.learned, lastSavedAt: new Date().toISOString() }
     });
   }
 }

@@ -7,6 +7,8 @@ type CliOptions = {
   maxFileBytes: string;
   includeExt?: string;
   excludeDir?: string;
+  repoModels?: string;
+  fresh?: boolean;
   quiet?: boolean;
   verbose?: boolean;
   jsonSummary?: boolean;
@@ -30,6 +32,8 @@ program
   .option("--max-file-bytes <bytes>", "Maximum bytes from each file sent to prompts", "20000")
   .option("--include-ext <extensions>", "Additional file extensions to include, comma-separated (example: .toml,.env)")
   .option("--exclude-dir <directories>", "Additional directory names to exclude, comma-separated")
+  .option("--repo-models <models>", "Comma-separated repo authoring models (Codex,Grok,ChatGPT,Claude Haiku,Claude Sonnet,Claude Opus,Gemini,Manual)")
+  .option("--fresh", "Reset anatomy and local cortex state before scanning")
   .option("--quiet", "Suppress per-file progress output")
   .option("--verbose", "Print verbose per-file token usage output")
   .option("--json-summary", "Print final run summary as JSON")
@@ -49,6 +53,8 @@ program
       maxFileBytes,
       includeExt: parseCsv(options.includeExt),
       excludeDirs: parseCsv(options.excludeDir),
+      repoModels: parseCsv(options.repoModels),
+      freshStart: Boolean(options.fresh),
       quiet,
       verbose: Boolean(options.verbose)
     });

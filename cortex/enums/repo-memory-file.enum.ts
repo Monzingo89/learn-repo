@@ -1,7 +1,11 @@
 export enum RepoMemoryFile {
-  BRAIN = "BRAIN.md",
-  EYES = "EYES.md",
-  NOSE = "NOSE.md",
-  EARS = "EARS.md",
-  HANDS = "HANDS.md"
+  BRAIN = "anatomy/BRAIN.md",
+  EYES = "anatomy/EYES.md",
+  NOSE = "anatomy/NOSE.md",
+  EARS = "anatomy/EARS.md",
+  HANDS = "anatomy/HANDS.md",
+  SOUL = "anatomy/SOUL.md",
+  HEART = "anatomy/HEART.md"
 }
+
+export const ANATOMY_DIRECTORY = "anatomy";

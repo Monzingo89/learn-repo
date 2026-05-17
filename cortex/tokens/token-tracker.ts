@@ -16,11 +16,16 @@ function getTokenPath() {
   return path.join(process.cwd(), ".cortex", "token-usage.json");
 }
 
+function ensureTokenDirectory() {
+  fs.mkdirSync(path.join(process.cwd(), ".cortex"), { recursive: true });
+}
+
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
 export function readTokenLedger(): TokenLedger {
+  ensureTokenDirectory();
   const tokenPath = getTokenPath();
   if (!fs.existsSync(tokenPath)) return {};
   return JSON.parse(fs.readFileSync(tokenPath, "utf8") || "{}");
@@ -31,6 +36,7 @@ export function recordTokenUsage(
   inputText: string,
   outputText: string
 ): TokenRecord {
+  ensureTokenDirectory();
   const tokenPath = getTokenPath();
   const ledger = readTokenLedger();
 

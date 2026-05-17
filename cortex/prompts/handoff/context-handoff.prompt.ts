@@ -27,7 +27,17 @@ ${this.input.context}
 
 Return JSON:
 {
+  "activeTask": "",
+  "taskProgress": [
+    {
+      "task": "",
+      "status": "",
+      "completedItems": 0,
+      "remainingItems": 0
+    }
+  ],
   "completedWork": [],
+  "remainingWork": [],
   "durableFacts": [],
   "risks": [],
   "openQuestions": [],
