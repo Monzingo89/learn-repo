@@ -79,6 +79,26 @@ npm run build
 npm run test
 ```
 
+## Publishing (dual registry)
+
+This package can be published to both registries:
+
+- npmjs: `https://registry.npmjs.org`
+- GitHub Packages: `https://npm.pkg.github.com`
+
+Scripts:
+
+- `npm run publish:npmjs`
+- `npm run publish:github`
+- `npm run publish:dual`
+- `npm run release:patch:dual`
+- `npm run release:minor:dual`
+
+Required auth:
+
+- npmjs publish requires `NODE_AUTH_TOKEN` (or npm login) for npmjs.
+- GitHub Packages publish requires `NODE_AUTH_TOKEN` with `write:packages` scope (or GitHub Actions `GITHUB_TOKEN` with packages write permission).
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).

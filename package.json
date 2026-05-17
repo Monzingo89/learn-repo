@@ -9,6 +9,14 @@
   "publishConfig": {
     "access": "public"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Monzingo89/engineer-maxxing.git"
+  },
+  "homepage": "https://github.com/Monzingo89/engineer-maxxing#readme",
+  "bugs": {
+    "url": "https://github.com/Monzingo89/engineer-maxxing/issues"
+  },
   "scripts": {
     "build": "rm -rf dist && tsc",
     "dev": "tsx cortex/cli/learn.ts",
@@ -21,7 +29,12 @@
     "release:minor": "npm version minor && npm run verify:publish",
     "release:patch:local": "npm version patch --no-git-tag-version && npm run verify:publish",
     "release:minor:local": "npm version minor --no-git-tag-version && npm run verify:publish",
-    "publish:public": "npm publish --access public",
+    "publish:npmjs": "npm publish --access public",
+    "publish:github": "npm publish --registry=https://npm.pkg.github.com",
+    "publish:dual": "npm run publish:npmjs && npm run publish:github",
+    "publish:public": "npm run publish:npmjs",
+    "release:patch:dual": "npm version patch && npm run verify:publish && npm run publish:dual",
+    "release:minor:dual": "npm version minor && npm run verify:publish && npm run publish:dual",
     "prepublishOnly": "npm run verify:publish"
   },
   "dependencies": {
