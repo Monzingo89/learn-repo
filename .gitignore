@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tgz
+
+# Local runtime/state
+.cortex/
+
+# OS/editor
+.DS_Store
+.vscode/
+
+# Secrets
+.env
+.env.*
+!.env.example
+.npmrc
