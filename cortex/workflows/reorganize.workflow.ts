@@ -38,6 +38,11 @@ export type TechnologyDocLink = {
   url: string;
 };
 
+type CorePrinciple = {
+  name: string;
+  guidance: string;
+};
+
 type StackProfile = {
   hasTypeScript: boolean;
   hasJavaScript: boolean;
@@ -121,6 +126,81 @@ function readTechnologyDocsFromSoul(repoRoot: string): TechnologyDocLink[] {
   return parseTechnologyDocsFromSoul(fs.readFileSync(soulPath, "utf8"));
 }
 
+function readCorePrinciplesFromBrain(repoRoot: string): CorePrinciple[] {
+  const defaults: CorePrinciple[] = [
+    {
+      name: "KISS",
+      guidance: "Prefer the simplest structure that preserves clarity and functionality."
+    },
+    {
+      name: "DRY",
+      guidance: "Consolidate duplicated knowledge into shared modules and avoid repeated logic across features."
+    },
+    {
+      name: "Single Responsibility",
+      guidance: "Each file/module should have one clear reason to change."
+    },
+    {
+      name: "Readable Boundaries",
+      guidance: "Keep business logic separate from transport/framework adapters for boring, maintainable code."
+    }
+  ];
+
+  const brainPath = path.join(repoRoot, RepoMemoryFile.BRAIN);
+  if (!fs.existsSync(brainPath)) return defaults;
+
+  const brain = fs.readFileSync(brainPath, "utf8");
+  const normalized = brain.toLowerCase();
+
+  const filtered = defaults.filter((principle) => {
+    if (principle.name === "Single Responsibility") {
+      return normalized.includes("single responsibility");
+    }
+
+    if (principle.name === "Readable Boundaries") {
+      return normalized.includes("clean architecture") || normalized.includes("boring, maintainable implementation");
+    }
+
+    return normalized.includes(principle.name.toLowerCase());
+  });
+
+  return filtered.length > 0 ? filtered : defaults;
+}
+
+function inferTechnologyConventions(technologyDocs: TechnologyDocLink[]): string[] {
+  const conventions = new Set<string>();
+
+  for (const doc of technologyDocs) {
+    const name = doc.name.toLowerCase();
+
+    if (name.includes("typescript") || name.includes("javascript")) {
+      conventions.add("Use shallow, feature-oriented folder boundaries and avoid deep utility nesting.");
+      conventions.add("Prefer explicit exports and small cohesive modules over generic catch-all files.");
+    }
+
+    if (name.includes("node")) {
+      conventions.add("Keep HTTP/framework adapters thin; move business rules into service/domain modules.");
+    }
+
+    if (name.includes("react")) {
+      conventions.add("Organize UI by feature (components/hooks/services/state) to reduce cross-feature coupling.");
+    }
+
+    if (name.includes("python")) {
+      conventions.add("Separate API entrypoints, domain logic, and infrastructure concerns into distinct modules.");
+    }
+
+    if (name.includes("docker") || name.includes("kubernetes")) {
+      conventions.add("Centralize deployment/infrastructure artifacts under infra/ and keep app source focused on runtime logic.");
+    }
+  }
+
+  conventions.add("Apply SRP consistently: split mixed-purpose files before moving them.");
+  conventions.add("Use shared packages for cross-cutting helpers to enforce DRY while keeping boundaries explicit.");
+
+  return Array.from(conventions);
+}
+
 function collectObservedFiles(state: RepoBrainState): string[] {
   const files: string[] = [];
 
@@ -185,6 +265,49 @@ function inferStackProfile(technologyNames: string[], state: RepoBrainState): St
   };
 }
 
+function sanitizeSegment(value?: string): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+  return normalized || undefined;
+}
+
+function firstUsefulSegment(filePath: string): string {
+  const ignored = new Set([
+    "apps",
+    "app",
+    "src",
+    "api",
+    "web",
+    "packages",
+    "package",
+    "services",
+    "service",
+    "lib",
+    "libs",
+    "shared",
+    "common",
+    "internal",
+    "modules",
+    "module"
+  ]);
+
+  for (const segment of filePath.split("/")) {
+    const normalized = sanitizeSegment(segment);
+    if (!normalized) continue;
+    if (ignored.has(normalized)) continue;
+    return normalized;
+  }
+
+  return "core";
+}
+
+function segmentAfter(filePath: string, marker: string): string | undefined {
+  const segments = filePath.split("/");
+  const markerIndex = segments.findIndex((segment) => segment.toLowerCase() === marker.toLowerCase());
+  if (markerIndex < 0 || markerIndex + 1 >= segments.length) return undefined;
+  return sanitizeSegment(segments[markerIndex + 1]);
+}
+
 function suggestDestinationPath(sourcePath: string, profile: StackProfile): string {
   const ext = path.extname(sourcePath);
   const normalized = sourcePath.toLowerCase();
@@ -198,11 +321,25 @@ function suggestDestinationPath(sourcePath: string, profile: StackProfile): stri
   }
 
   if (/\/(handler|handlers|api|routes|functions)\//.test(normalized)) {
-    return `apps/api/src/modules/<domain>/${path.basename(sourcePath)}`;
+    const domain =
+      segmentAfter(sourcePath, "handlers") ||
+      segmentAfter(sourcePath, "handler") ||
+      segmentAfter(sourcePath, "routes") ||
+      segmentAfter(sourcePath, "functions") ||
+      firstUsefulSegment(sourcePath);
+
+    return `apps/api/src/modules/${domain}/${path.basename(sourcePath)}`;
   }
 
   if (/\/(component|components|page|pages|view|views|feature|features)\//.test(normalized)) {
-    return `apps/web/src/features/<feature>/${path.basename(sourcePath)}`;
+    const feature =
+      segmentAfter(sourcePath, "features") ||
+      segmentAfter(sourcePath, "feature") ||
+      segmentAfter(sourcePath, "pages") ||
+      segmentAfter(sourcePath, "components") ||
+      firstUsefulSegment(sourcePath);
+
+    return `apps/web/src/features/${feature}/${path.basename(sourcePath)}`;
   }
 
   if (/\/(lib|utils|helpers|shared)\//.test(normalized)) {
@@ -210,11 +347,13 @@ function suggestDestinationPath(sourcePath: string, profile: StackProfile): stri
   }
 
   if (profile.hasPython && ext === ".py") {
-    return `services/<service>/src/${path.basename(sourcePath)}`;
+    const service = segmentAfter(sourcePath, "services") || firstUsefulSegment(sourcePath);
+    return `services/${service}/src/${path.basename(sourcePath)}`;
   }
 
   if ((profile.hasTypeScript || profile.hasJavaScript) && [".ts", ".tsx", ".js", ".jsx"].includes(ext)) {
-    return `packages/<bounded-context>/src/${path.basename(sourcePath)}`;
+    const boundedContext = firstUsefulSegment(sourcePath);
+    return `packages/${boundedContext}/src/${path.basename(sourcePath)}`;
   }
 
   return `docs/migrations/${path.basename(sourcePath)}`;
@@ -244,14 +383,23 @@ function buildMoveSuggestions(
     if (suggestions.length >= limit) break;
 
     const target = suggestDestinationPath(source, profile);
+    const normalizedSource = source.toLowerCase();
+
+    let reason = "KISS structure normalization";
+
+    if (srpSignals.includes(source)) {
+      reason = "SRP + KISS: split mixed responsibilities into focused modules";
+    } else if (/\/(lib|utils|helpers|shared)\//.test(normalizedSource)) {
+      reason = "DRY consolidation into shared package boundary";
+    } else if (/\/(handler|handlers|api|routes|functions)\//.test(normalizedSource)) {
+      reason = "Readable boundaries: separate transport and business concerns";
+    }
 
     if (target.endsWith(path.basename(source)) && source.endsWith(path.basename(source))) {
       suggestions.push({
         source,
         target,
-        reason: srpSignals.includes(source)
-          ? "Single-responsibility split candidate"
-          : "Structure normalization"
+        reason
       });
     }
   }
@@ -330,6 +478,8 @@ export function buildReorganizePlanMarkdown(input: {
   generatedAtIso: string;
   learnTaskStatus: string;
   cleanTaskStatus: string;
+  corePrinciples: CorePrinciple[];
+  recommendedConventions: string[];
   technologyDocs: TechnologyDocLink[];
   technologyNames: string[];
   srpSignals: string[];
@@ -348,9 +498,20 @@ export function buildReorganizePlanMarkdown(input: {
   lines.push(`- LEARN_REPO status: \`${input.learnTaskStatus}\``);
   lines.push(`- CLEAN_REPO status: \`${input.cleanTaskStatus}\``);
   lines.push(`- SOUL technology docs parsed: **${input.technologyDocs.length}**`);
+  lines.push(`- BRAIN core principles applied: **${input.corePrinciples.length}**`);
   lines.push(`- Single-responsibility signals: **${input.srpSignals.length}**`);
   lines.push(`- High-pressure directories: **${input.directoryPressure.length}**`);
   lines.push(`- Move map: \`${input.moveMapPath}\``);
+  lines.push("");
+
+  lines.push("## Core design principles enforced (from BRAIN)");
+  lines.push("");
+  lines.push(...input.corePrinciples.map((principle) => `- **${principle.name}**: ${principle.guidance}`));
+
+  lines.push("");
+  lines.push("## Technology-aware conventions (from SOUL docs + best practices)");
+  lines.push("");
+  lines.push(...input.recommendedConventions.map((item) => `- ${item}`));
   lines.push("");
 
   lines.push("## Industry-standard target structure");
@@ -477,7 +638,9 @@ export async function reorganizeRepo(
   const cleanTask = state.activeContext.tasks[RepoTask.CLEAN_REPO];
 
   const technologyNames = uniqueSorted(state.learned.technologies || []);
+  const corePrinciples = readCorePrinciplesFromBrain(repoRoot);
   const technologyDocs = readTechnologyDocsFromSoul(repoRoot);
+  const recommendedConventions = inferTechnologyConventions(technologyDocs);
   const srpSignals = collectSingleResponsibilitySignals(state);
   const observedFiles = collectObservedFiles(state);
   const directoryPressure = collectDirectoryPressure(observedFiles);
@@ -500,6 +663,8 @@ export async function reorganizeRepo(
     generatedAtIso,
     learnTaskStatus: learnTask.status,
     cleanTaskStatus: cleanTask.status,
+    corePrinciples,
+    recommendedConventions,
     technologyDocs,
     technologyNames,
     srpSignals,
@@ -525,6 +690,7 @@ export async function reorganizeRepo(
     [
       `- Reorganization plan generated: \`${planPath}\``,
       `- Move map generated: \`${moveMapPath}\``,
+      `- Principles applied: ${corePrinciples.map((principle) => principle.name).join(", ")}`,
       "- Execute moves in small batches and keep imports passing after each batch.",
       "- Re-run LEARN_REPO and CLEAN_REPO after each reorganization phase."
     ].join("\n")

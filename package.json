@@ -23,6 +23,7 @@
     "workflow:learn": "tsx cortex/cli/learn.ts",
     "workflow:clean": "tsx cortex/cli/learn.ts clean-repo",
     "workflow:reorganize": "tsx cortex/cli/learn.ts reorganize-repo",
+    "workflow:execute": "tsx cortex/cli/learn.ts execute-repo",
     "workflow:setup": "tsx cortex/cli/learn.ts setup-repo --fresh",
     "start": "node dist/cortex/cli/learn.js",
     "lint": "tsc --noEmit",

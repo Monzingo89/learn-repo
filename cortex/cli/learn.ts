@@ -4,6 +4,7 @@ import path from "path";
 import { Command } from "commander";
 import { learn } from "../workflows/learn.workflow.js";
 import { cleanRepo } from "../workflows/clean.workflow.js";
+import { executeRepo } from "../workflows/execute.workflow.js";
 import { reorganizeRepo } from "../workflows/reorganize.workflow.js";
 import { setupRepo } from "../workflows/setup.workflow.js";
 
@@ -40,6 +41,18 @@ type SetupCliOptions = {
   fresh?: boolean;
   quiet?: boolean;
   verbose?: boolean;
+  execute?: boolean;
+  dryRun?: boolean;
+  executeDeadCode?: boolean;
+  jsonSummary?: boolean;
+};
+
+type ExecuteCliOptions = {
+  path?: string;
+  quiet?: boolean;
+  dryRun?: boolean;
+  deadCode?: boolean;
+  maxOperations?: string;
   jsonSummary?: boolean;
 };
 
@@ -164,6 +177,9 @@ program
   .option("--fresh", "Reset anatomy and local cortex state before running the full pipeline")
   .option("--quiet", "Suppress command output")
   .option("--verbose", "Print verbose learn pass output")
+  .option("--execute", "Execute generated plans after learn/clean/reorganize")
+  .option("--dry-run", "When combined with --execute, simulate execution without applying file changes")
+  .option("--execute-dead-code", "When combined with --execute, move dead-code queue entries into quarantine")
   .option("--json-summary", "Print final run summary as JSON")
   .action(async (repoPath: string | undefined, options: SetupCliOptions) => {
     const cwd = process.cwd();
@@ -186,7 +202,45 @@ program
         repoModels: parseCsv(options.repoModels),
         freshStart: Boolean(options.fresh),
         quiet,
-        verbose: Boolean(options.verbose)
+        verbose: Boolean(options.verbose),
+        executeAfterPlan: Boolean(options.execute),
+        executeDryRun: Boolean(options.dryRun),
+        executeDeadCode: Boolean(options.executeDeadCode)
+      })
+    );
+
+    if (options.jsonSummary) {
+      process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    }
+  });
+
+program
+  .command("execute-repo [repoPath]")
+  .description("Apply generated clean/reorganize plan artifacts (moves + optional dead-code quarantine)")
+  .option("--path <repoPath>", "Explicit repository path (overrides positional repoPath)")
+  .option("--quiet", "Suppress command output")
+  .option("--dry-run", "Simulate execution without applying file changes")
+  .option("--dead-code", "Also quarantine dead-code queue entries into .cortex/trash/dead-code")
+  .option("--max-operations <count>", "Maximum operations to apply during this pass", "300")
+  .option("--json-summary", "Print final run summary as JSON")
+  .action(async (repoPath: string | undefined, options: ExecuteCliOptions) => {
+    const cwd = process.cwd();
+    const repoRootInput = options.path || repoPath || cwd;
+    const repoRoot = path.resolve(cwd, repoRootInput);
+    const quiet = Boolean(options.quiet || options.jsonSummary);
+    const maxOperations = Number.parseInt(options.maxOperations || "300", 10);
+
+    if (!Number.isFinite(maxOperations) || maxOperations <= 0) {
+      throw new Error(`Invalid --max-operations value: ${options.maxOperations}`);
+    }
+
+    const summary = await runInRepoRoot(repoRoot, async () =>
+      executeRepo(process.cwd(), {
+        quiet,
+        dryRun: Boolean(options.dryRun),
+        applyMoves: true,
+        applyDeadCode: Boolean(options.deadCode),
+        maxOperations
       })
     );
 

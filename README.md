@@ -2,7 +2,7 @@
 
 Package-first repo intelligence tool for AI-heavy codebases.
 
-Latest release: **v1.0.5**
+Latest release: **v1.0.6**
 
 ## Use this as a package (not a cloned template)
 
@@ -120,6 +120,44 @@ yarn dlx @monzingo89/engineer-maxxing setup-repo --fresh
 bunx @monzingo89/engineer-maxxing setup-repo --fresh
 ```
 
+If you want the pipeline to **execute** generated plans immediately:
+
+```bash
+npx @monzingo89/engineer-maxxing setup-repo --execute
+```
+
+Simulate execution first:
+
+```bash
+npx @monzingo89/engineer-maxxing setup-repo --execute --dry-run
+```
+
+Include dead-code quarantine during execution:
+
+```bash
+npx @monzingo89/engineer-maxxing setup-repo --execute --execute-dead-code
+```
+
+### 6) Execute generated plans (after clean-repo + reorganize-repo)
+
+If you already ran `clean-repo` and `reorganize-repo`, execute their artifacts with:
+
+```bash
+npx @monzingo89/engineer-maxxing execute-repo
+```
+
+Recommended first pass:
+
+```bash
+npx @monzingo89/engineer-maxxing execute-repo --dry-run
+```
+
+Optional dead-code quarantine execution:
+
+```bash
+npx @monzingo89/engineer-maxxing execute-repo --dead-code
+```
+
 ## Quick start
 
 Run in a repo root:
@@ -188,7 +226,20 @@ npx @monzingo89/engineer-maxxing --fresh
 - `setup-repo --repo-models "Codex,ChatGPT,Gemini"`: declare repo authorship models.
 - `setup-repo --quiet`: suppress output.
 - `setup-repo --verbose`: verbose learn output.
+- `setup-repo --execute`: apply generated plans after planning phases.
+- `setup-repo --dry-run`: simulate execution when combined with `--execute`.
+- `setup-repo --execute-dead-code`: quarantine dead-code queue entries when combined with `--execute`.
 - `setup-repo --json-summary`: machine-readable summary.
+
+### `execute-repo` subcommand
+
+- `execute-repo [repoPath]`: apply generated clean/reorganize artifacts.
+- `execute-repo --path <repoPath>`: explicit repository path.
+- `execute-repo --dry-run`: simulate without applying changes.
+- `execute-repo --dead-code`: quarantine entries from `anatomy/CLEANUP_DEAD_CODE_QUEUE.txt`.
+- `execute-repo --max-operations <count>`: cap changes per run.
+- `execute-repo --quiet`: suppress output.
+- `execute-repo --json-summary`: machine-readable summary.
 
 ## For maintainers (this repo)
 
@@ -204,6 +255,7 @@ Workflow aliases for local development:
 - `npm run workflow:learn`
 - `npm run workflow:clean`
 - `npm run workflow:reorganize`
+- `npm run workflow:execute`
 - `npm run workflow:setup`
 
 ## Funding ❤️

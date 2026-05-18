@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import { cleanRepo, CleanRepoSummary } from "./clean.workflow.js";
+import { executeRepo, ExecuteRepoSummary } from "./execute.workflow.js";
 import { learn, LearnSummary } from "./learn.workflow.js";
 import { reorganizeRepo, ReorganizeRepoSummary } from "./reorganize.workflow.js";
 
@@ -11,6 +12,9 @@ export type SetupRepoOptions = {
   freshStart: boolean;
   quiet: boolean;
   verbose: boolean;
+  executeAfterPlan: boolean;
+  executeDryRun: boolean;
+  executeDeadCode: boolean;
 };
 
 export type SetupRepoSummary = {
@@ -19,6 +23,7 @@ export type SetupRepoSummary = {
   learn: LearnSummary;
   clean: CleanRepoSummary;
   reorganize: ReorganizeRepoSummary;
+  execute?: ExecuteRepoSummary;
 };
 
 const DEFAULT_SETUP_OPTIONS: SetupRepoOptions = {
@@ -28,7 +33,10 @@ const DEFAULT_SETUP_OPTIONS: SetupRepoOptions = {
   repoModels: [],
   freshStart: true,
   quiet: false,
-  verbose: false
+  verbose: false,
+  executeAfterPlan: false,
+  executeDryRun: false,
+  executeDeadCode: false
 };
 
 export function resolveSetupOptions(input?: Partial<SetupRepoOptions>): SetupRepoOptions {
@@ -83,11 +91,23 @@ export async function setupRepo(repoRoot: string, inputOptions?: Partial<SetupRe
     reorganize: reorganizeSummary
   };
 
+  if (options.executeAfterPlan) {
+    summary.execute = await executeRepo(repoRoot, {
+      quiet: options.quiet,
+      dryRun: options.executeDryRun,
+      applyMoves: true,
+      applyDeadCode: options.executeDeadCode
+    });
+  }
+
   if (!options.quiet) {
     console.log(chalk.green("setup-repo pipeline completed."));
     console.log(`- learn scanned: ${summary.learn.scannedFiles}/${summary.learn.totalFiles}`);
     console.log(`- clean plan: ${summary.clean.planPath}`);
     console.log(`- reorganize plan: ${summary.reorganize.planPath}`);
+    if (summary.execute) {
+      console.log(`- execution report: ${summary.execute.reportPath}`);
+    }
   }
 
   return summary;
