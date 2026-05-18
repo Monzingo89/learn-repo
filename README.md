@@ -2,7 +2,7 @@
 
 Package-first repo intelligence tool for AI-heavy codebases.
 
-Latest release: **v1.0.4**
+Latest release: **v1.0.5**
 
 ## Use this as a package (not a cloned template)
 
@@ -103,6 +103,23 @@ You can also target another path:
 npx @monzingo89/engineer-maxxing reorganize-repo --path /absolute/path/to/repo
 ```
 
+### 5) One-command pipeline (recommended for external npm users)
+
+Run learn + clean + reorganize in a single command:
+
+```bash
+npx @monzingo89/engineer-maxxing setup-repo --fresh
+```
+
+Equivalent commands across CLIs:
+
+```bash
+npx @monzingo89/engineer-maxxing setup-repo --fresh
+pnpm dlx @monzingo89/engineer-maxxing setup-repo --fresh
+yarn dlx @monzingo89/engineer-maxxing setup-repo --fresh
+bunx @monzingo89/engineer-maxxing setup-repo --fresh
+```
+
 ## Quick start
 
 Run in a repo root:
@@ -160,6 +177,19 @@ npx @monzingo89/engineer-maxxing --fresh
 - `reorganize-repo --quiet`: suppress output.
 - `reorganize-repo --json-summary`: machine-readable summary.
 
+### `setup-repo` subcommand
+
+- `setup-repo [repoPath]`: run LEARN_REPO + CLEAN_REPO + REORGANIZE_REPO in one command.
+- `setup-repo --path <repoPath>`: explicit repository path.
+- `setup-repo --fresh`: reset anatomy/context before running full pipeline.
+- `setup-repo --max-file-bytes <bytes>`: learn-pass file bytes cap.
+- `setup-repo --include-ext ".toml,.env"`: add file extensions for learn pass.
+- `setup-repo --exclude-dir "tmp,artifacts"`: add excluded directories for learn pass.
+- `setup-repo --repo-models "Codex,ChatGPT,Gemini"`: declare repo authorship models.
+- `setup-repo --quiet`: suppress output.
+- `setup-repo --verbose`: verbose learn output.
+- `setup-repo --json-summary`: machine-readable summary.
+
 ## For maintainers (this repo)
 
 If you are contributing to the package itself:
@@ -168,6 +198,13 @@ If you are contributing to the package itself:
 npm run build
 npm run test
 ```
+
+Workflow aliases for local development:
+
+- `npm run workflow:learn`
+- `npm run workflow:clean`
+- `npm run workflow:reorganize`
+- `npm run workflow:setup`
 
 ## Funding ❤️
 

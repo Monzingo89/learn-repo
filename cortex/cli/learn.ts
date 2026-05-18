@@ -5,6 +5,7 @@ import { Command } from "commander";
 import { learn } from "../workflows/learn.workflow.js";
 import { cleanRepo } from "../workflows/clean.workflow.js";
 import { reorganizeRepo } from "../workflows/reorganize.workflow.js";
+import { setupRepo } from "../workflows/setup.workflow.js";
 
 type CliOptions = {
   path?: string;
@@ -27,6 +28,18 @@ type CleanCliOptions = {
 type ReorganizeCliOptions = {
   path?: string;
   quiet?: boolean;
+  jsonSummary?: boolean;
+};
+
+type SetupCliOptions = {
+  path?: string;
+  maxFileBytes: string;
+  includeExt?: string;
+  excludeDir?: string;
+  repoModels?: string;
+  fresh?: boolean;
+  quiet?: boolean;
+  verbose?: boolean;
   jsonSummary?: boolean;
 };
 
@@ -132,6 +145,48 @@ program
     const summary = await runInRepoRoot(repoRoot, async () =>
       reorganizeRepo(process.cwd(), {
         quiet
+      })
+    );
+
+    if (options.jsonSummary) {
+      process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    }
+  });
+
+program
+  .command("setup-repo [repoPath]")
+  .description("Run LEARN_REPO + CLEAN_REPO + REORGANIZE_REPO in one command")
+  .option("--path <repoPath>", "Explicit repository path (overrides positional repoPath)")
+  .option("--max-file-bytes <bytes>", "Maximum bytes from each file sent to prompts", "20000")
+  .option("--include-ext <extensions>", "Additional file extensions to include, comma-separated (example: .toml,.env)")
+  .option("--exclude-dir <directories>", "Additional directory names to exclude, comma-separated")
+  .option("--repo-models <models>", "Comma-separated repo authoring models (Codex,Grok,ChatGPT,Claude Haiku,Claude Sonnet,Claude Opus,Gemini,Manual)")
+  .option("--fresh", "Reset anatomy and local cortex state before running the full pipeline")
+  .option("--quiet", "Suppress command output")
+  .option("--verbose", "Print verbose learn pass output")
+  .option("--json-summary", "Print final run summary as JSON")
+  .action(async (repoPath: string | undefined, options: SetupCliOptions) => {
+    const cwd = process.cwd();
+    const repoRootInput = options.path || repoPath || cwd;
+    const repoRoot = path.resolve(cwd, repoRootInput);
+
+    const maxFileBytes = Number.parseInt(options.maxFileBytes, 10);
+
+    if (!Number.isFinite(maxFileBytes) || maxFileBytes <= 0) {
+      throw new Error(`Invalid --max-file-bytes value: ${options.maxFileBytes}`);
+    }
+
+    const quiet = Boolean((options.quiet && !options.verbose) || (options.jsonSummary && !options.verbose));
+
+    const summary = await runInRepoRoot(repoRoot, async () =>
+      setupRepo(process.cwd(), {
+        maxFileBytes,
+        includeExt: parseCsv(options.includeExt),
+        excludeDirs: parseCsv(options.excludeDir),
+        repoModels: parseCsv(options.repoModels),
+        freshStart: Boolean(options.fresh),
+        quiet,
+        verbose: Boolean(options.verbose)
       })
     );
 
