@@ -59,7 +59,10 @@ test("executeRepo supports dry-run and apply modes", async () => {
       quiet: true,
       dryRun: true,
       applyMoves: true,
-      applyDeadCode: true,
+      deadCodeAction: "quarantine",
+      splitGodFiles: false,
+      cleanupDependencies: false,
+      maxFileLines: 500,
       maxOperations: 10
     });
 
@@ -72,7 +75,10 @@ test("executeRepo supports dry-run and apply modes", async () => {
       quiet: true,
       dryRun: false,
       applyMoves: true,
-      applyDeadCode: true,
+      deadCodeAction: "quarantine",
+      splitGodFiles: false,
+      cleanupDependencies: false,
+      maxFileLines: 500,
       maxOperations: 10
     });
 

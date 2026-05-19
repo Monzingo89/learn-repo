@@ -14,7 +14,11 @@ export type SetupRepoOptions = {
   verbose: boolean;
   executeAfterPlan: boolean;
   executeDryRun: boolean;
-  executeDeadCode: boolean;
+  executeDeadCodeAction: "none" | "quarantine" | "delete";
+  executeSplitGodFiles: boolean;
+  executeCleanupDependencies: boolean;
+  executeMaxFileLines: number;
+  executeMaxOperations: number;
 };
 
 export type SetupRepoSummary = {
@@ -36,7 +40,11 @@ const DEFAULT_SETUP_OPTIONS: SetupRepoOptions = {
   verbose: false,
   executeAfterPlan: false,
   executeDryRun: false,
-  executeDeadCode: false
+  executeDeadCodeAction: "quarantine",
+  executeSplitGodFiles: true,
+  executeCleanupDependencies: true,
+  executeMaxFileLines: 500,
+  executeMaxOperations: 300
 };
 
 export function resolveSetupOptions(input?: Partial<SetupRepoOptions>): SetupRepoOptions {
@@ -53,7 +61,13 @@ export function resolveSetupOptions(input?: Partial<SetupRepoOptions>): SetupRep
         : DEFAULT_SETUP_OPTIONS.maxFileBytes,
     includeExt: Array.from(new Set((merged.includeExt || []).map((item) => item.trim()).filter(Boolean))),
     excludeDirs: Array.from(new Set((merged.excludeDirs || []).map((item) => item.trim()).filter(Boolean))),
-    repoModels: Array.from(new Set((merged.repoModels || []).map((item) => item.trim()).filter(Boolean)))
+    repoModels: Array.from(new Set((merged.repoModels || []).map((item) => item.trim()).filter(Boolean))),
+    executeMaxFileLines: Number.isFinite(merged.executeMaxFileLines)
+      ? Math.max(50, Math.floor(merged.executeMaxFileLines))
+      : DEFAULT_SETUP_OPTIONS.executeMaxFileLines,
+    executeMaxOperations: Number.isFinite(merged.executeMaxOperations)
+      ? Math.max(1, Math.floor(merged.executeMaxOperations))
+      : DEFAULT_SETUP_OPTIONS.executeMaxOperations
   };
 }
 
@@ -96,7 +110,11 @@ export async function setupRepo(repoRoot: string, inputOptions?: Partial<SetupRe
       quiet: options.quiet,
       dryRun: options.executeDryRun,
       applyMoves: true,
-      applyDeadCode: options.executeDeadCode
+      deadCodeAction: options.executeDeadCodeAction,
+      splitGodFiles: options.executeSplitGodFiles,
+      cleanupDependencies: options.executeCleanupDependencies,
+      maxFileLines: options.executeMaxFileLines,
+      maxOperations: options.executeMaxOperations
     });
   }
 

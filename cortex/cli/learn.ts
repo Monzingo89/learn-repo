@@ -44,6 +44,11 @@ type SetupCliOptions = {
   execute?: boolean;
   dryRun?: boolean;
   executeDeadCode?: boolean;
+  executeDeleteDeadCode?: boolean;
+  executeMaxFileLines?: string;
+  executeMaxOperations?: string;
+  executeSplitGodFiles?: boolean;
+  executeCleanupDeps?: boolean;
   jsonSummary?: boolean;
 };
 
@@ -52,6 +57,10 @@ type ExecuteCliOptions = {
   quiet?: boolean;
   dryRun?: boolean;
   deadCode?: boolean;
+  deleteDeadCode?: boolean;
+  splitGodFiles?: boolean;
+  cleanupDeps?: boolean;
+  maxFileLines?: string;
   maxOperations?: string;
   jsonSummary?: boolean;
 };
@@ -179,7 +188,12 @@ program
   .option("--verbose", "Print verbose learn pass output")
   .option("--execute", "Execute generated plans after learn/clean/reorganize")
   .option("--dry-run", "When combined with --execute, simulate execution without applying file changes")
-  .option("--execute-dead-code", "When combined with --execute, move dead-code queue entries into quarantine")
+  .option("--execute-dead-code", "When combined with --execute, process dead-code queue entries (quarantine mode)")
+  .option("--execute-delete-dead-code", "When combined with --execute, delete dead-code queue entries")
+  .option("--execute-max-file-lines <count>", "Maximum lines allowed per file before safe split attempts", "500")
+  .option("--execute-max-operations <count>", "Maximum execution operations per run", "300")
+  .option("--no-execute-split-god-files", "Disable safe splitting for files above the max line threshold")
+  .option("--no-execute-cleanup-deps", "Disable dependency cleanup during execution")
   .option("--json-summary", "Print final run summary as JSON")
   .action(async (repoPath: string | undefined, options: SetupCliOptions) => {
     const cwd = process.cwd();
@@ -192,7 +206,24 @@ program
       throw new Error(`Invalid --max-file-bytes value: ${options.maxFileBytes}`);
     }
 
+    const executeMaxFileLines = Number.parseInt(options.executeMaxFileLines || "500", 10);
+    const executeMaxOperations = Number.parseInt(options.executeMaxOperations || "300", 10);
+
+    if (!Number.isFinite(executeMaxFileLines) || executeMaxFileLines <= 0) {
+      throw new Error(`Invalid --execute-max-file-lines value: ${options.executeMaxFileLines}`);
+    }
+
+    if (!Number.isFinite(executeMaxOperations) || executeMaxOperations <= 0) {
+      throw new Error(`Invalid --execute-max-operations value: ${options.executeMaxOperations}`);
+    }
+
     const quiet = Boolean((options.quiet && !options.verbose) || (options.jsonSummary && !options.verbose));
+
+    const executeDeadCodeAction = options.executeDeleteDeadCode
+      ? "delete"
+      : options.executeDeadCode
+        ? "quarantine"
+        : "none";
 
     const summary = await runInRepoRoot(repoRoot, async () =>
       setupRepo(process.cwd(), {
@@ -205,7 +236,11 @@ program
         verbose: Boolean(options.verbose),
         executeAfterPlan: Boolean(options.execute),
         executeDryRun: Boolean(options.dryRun),
-        executeDeadCode: Boolean(options.executeDeadCode)
+        executeDeadCodeAction,
+        executeSplitGodFiles: options.executeSplitGodFiles !== false,
+        executeCleanupDependencies: options.executeCleanupDeps !== false,
+        executeMaxFileLines,
+        executeMaxOperations
       })
     );
 
@@ -220,7 +255,11 @@ program
   .option("--path <repoPath>", "Explicit repository path (overrides positional repoPath)")
   .option("--quiet", "Suppress command output")
   .option("--dry-run", "Simulate execution without applying file changes")
-  .option("--dead-code", "Also quarantine dead-code queue entries into .cortex/trash/dead-code")
+  .option("--dead-code", "Process dead-code queue entries (quarantine mode)")
+  .option("--delete-dead-code", "Delete dead-code queue entries")
+  .option("--no-split-god-files", "Disable safe splitting for files above the max line threshold")
+  .option("--no-cleanup-deps", "Disable dependency cleanup from dependency audit")
+  .option("--max-file-lines <count>", "Maximum lines allowed per file before safe split attempts", "500")
   .option("--max-operations <count>", "Maximum operations to apply during this pass", "300")
   .option("--json-summary", "Print final run summary as JSON")
   .action(async (repoPath: string | undefined, options: ExecuteCliOptions) => {
@@ -229,17 +268,31 @@ program
     const repoRoot = path.resolve(cwd, repoRootInput);
     const quiet = Boolean(options.quiet || options.jsonSummary);
     const maxOperations = Number.parseInt(options.maxOperations || "300", 10);
+    const maxFileLines = Number.parseInt(options.maxFileLines || "500", 10);
 
     if (!Number.isFinite(maxOperations) || maxOperations <= 0) {
       throw new Error(`Invalid --max-operations value: ${options.maxOperations}`);
     }
+
+    if (!Number.isFinite(maxFileLines) || maxFileLines <= 0) {
+      throw new Error(`Invalid --max-file-lines value: ${options.maxFileLines}`);
+    }
+
+    const deadCodeAction = options.deleteDeadCode
+      ? "delete"
+      : options.deadCode
+        ? "quarantine"
+        : "none";
 
     const summary = await runInRepoRoot(repoRoot, async () =>
       executeRepo(process.cwd(), {
         quiet,
         dryRun: Boolean(options.dryRun),
         applyMoves: true,
-        applyDeadCode: Boolean(options.deadCode),
+        deadCodeAction,
+        splitGodFiles: options.splitGodFiles !== false,
+        cleanupDependencies: options.cleanupDeps !== false,
+        maxFileLines,
         maxOperations
       })
     );

@@ -146,6 +146,13 @@ If you already ran `clean-repo` and `reorganize-repo`, execute their artifacts w
 npx @monzingo89/engineer-maxxing execute-repo
 ```
 
+By default, execution now attempts to:
+
+- apply move-map file moves,
+- quarantine dead-code queue entries,
+- clean unused dependencies from `package.json` (based on dependency audit),
+- safely split large ("god") files above 500 lines when export-level extraction is safe.
+
 Recommended first pass:
 
 ```bash
@@ -156,6 +163,12 @@ Optional dead-code quarantine execution:
 
 ```bash
 npx @monzingo89/engineer-maxxing execute-repo --dead-code
+```
+
+Optional hard delete of dead-code queue entries:
+
+```bash
+npx @monzingo89/engineer-maxxing execute-repo --delete-dead-code
 ```
 
 ## Quick start
@@ -229,6 +242,11 @@ npx @monzingo89/engineer-maxxing --fresh
 - `setup-repo --execute`: apply generated plans after planning phases.
 - `setup-repo --dry-run`: simulate execution when combined with `--execute`.
 - `setup-repo --execute-dead-code`: quarantine dead-code queue entries when combined with `--execute`.
+- `setup-repo --execute-delete-dead-code`: delete dead-code queue entries when combined with `--execute`.
+- `setup-repo --execute-max-file-lines <count>`: line threshold for safe god-file splitting.
+- `setup-repo --execute-max-operations <count>`: cap execution operations per run.
+- `setup-repo --no-execute-split-god-files`: disable god-file splitting during execution.
+- `setup-repo --no-execute-cleanup-deps`: disable dependency cleanup during execution.
 - `setup-repo --json-summary`: machine-readable summary.
 
 ### `execute-repo` subcommand
@@ -237,6 +255,10 @@ npx @monzingo89/engineer-maxxing --fresh
 - `execute-repo --path <repoPath>`: explicit repository path.
 - `execute-repo --dry-run`: simulate without applying changes.
 - `execute-repo --dead-code`: quarantine entries from `anatomy/CLEANUP_DEAD_CODE_QUEUE.txt`.
+- `execute-repo --delete-dead-code`: delete entries from `anatomy/CLEANUP_DEAD_CODE_QUEUE.txt`.
+- `execute-repo --max-file-lines <count>`: line threshold for safe god-file splitting (default `500`).
+- `execute-repo --no-split-god-files`: disable god-file splitting.
+- `execute-repo --no-cleanup-deps`: disable dependency cleanup from dependency audit.
 - `execute-repo --max-operations <count>`: cap changes per run.
 - `execute-repo --quiet`: suppress output.
 - `execute-repo --json-summary`: machine-readable summary.
